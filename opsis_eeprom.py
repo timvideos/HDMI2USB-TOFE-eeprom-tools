@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 
+from __future__ import print_function
+
 import ctypes
+import binascii
 import crcmod
 
 def assert_eq(a, b):
@@ -118,8 +121,11 @@ class OpsisEEPROM(ctypes.LittleEndianStructure):
         self.crc8_data = self.calculate_crc_data()
         self.crc8_full = self.calculate_crc_full()
 
+        self.eventlog_size = 0
+        self.eventlog_data = return_fill_buffer(self.eventlog_data, 0)
+
         self.pcb_pad = return_fill_buffer(self.pcb_pad, 0)
-        self.wp_empty = return_fill_buffer(self.wp_empty, 0)
+        self.wp_empty = return_fill_buffer(self.wp_empty, 0xff)
 
     def check(self):
         self.fx2.check()
@@ -130,7 +136,7 @@ class OpsisEEPROM(ctypes.LittleEndianStructure):
         assert_eq(self.sep_end, b'\0')
 
         assert_eq(self.pcb_pad, return_fill_buffer(self.pcb_pad, 0))
-        assert_eq(self.wp_empty, return_fill_buffer(self.wp_empty, 0))
+        assert_eq(self.wp_empty, return_fill_buffer(self.wp_empty, 0xff))
 
         assert_eq(self.crc8_data, self.calculate_crc_data())
         assert_eq(self.crc8_full, self.calculate_crc_full())
@@ -152,5 +158,35 @@ class OpsisEEPROM(ctypes.LittleEndianStructure):
         full_crc.update(raw_bytes[self.__class__.crc8_full.offset+1:])
         return full_crc.crcValue
 
-assert_eq(ctypes.sizeof(OpsisEEPROM), 256)
+    @classmethod
+    def size(cls):
+        return ctypes.sizeof(OpsisEEPROM)
 
+    def pcb_commit_set(self, sha1):
+        self.pcb_commit = (ctypes.c_byte * 20)(*binascii.unhexlify(sha1))
+
+    def pcb_commit_get(self):
+        return binascii.hexlify(bytes(self.pcb_commit))
+
+    def eui48(self):
+        assert self.wp_mac[0] == -1
+        assert self.wp_mac[1] == -1
+        assert self.wp_mac[2] == 0
+        return list((x & 0xff,) for x in self.wp_mac[2:])
+
+    def mac(self):
+        return ":".join("%02x" % x for x in self.eui48())
+
+    def eui64(self):
+        if self.wp_mac[0] == 0:
+            mac = list(self.wp_mac)
+        else:
+            assert self.wp_mac[0] == -1
+            assert self.wp_mac[1] == -1
+            assert self.wp_mac[2] == 0
+            mac = self.wp_mac[2:4] + [0xff, 0xfe] + self.wp_mac[5:]
+
+        return "".join("%02x" % (x & 0xff,) for x in mac)
+
+assert_eq(ctypes.sizeof(OpsisEEPROM), 256)
+assert_eq(OpsisEEPROM.size(), 256)
