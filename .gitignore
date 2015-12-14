@@ -55,3 +55,6 @@ docs/_build/
 
 # PyBuilder
 target/
+
+# Generated files
+opsis_eeprom_crc.c
