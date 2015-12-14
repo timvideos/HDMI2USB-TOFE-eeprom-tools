@@ -60,24 +60,6 @@ class FX2C0Config(ctypes.LittleEndianStructure):
 
 class OpsisEEPROM(ctypes.LittleEndianStructure):
     """Structure representing the Opsis EEPROM format.
-
-    >>> e = OpsisEEPROM()
-    >>> print_struct(e)
-    >>> print(e.as_bytearray())
-    >>> e.populate()
-    >>> e.check()
-    >>> print("-------------")
-    >>> print_struct(e)
-    >>> print(e.as_bytearray())
-    >>> print("\n\n\n")
-    >>> import time
-    >>> e.prod_program = int(time.time())
-    >>> try:
-    ...     e.check()
-    ...     raise SystemError("CRC Check didn't fail!")
-    ... except AssertionError:
-    ...     pass
-    >>> e.crc_data = e.calculate_crc_data()
     """
 
     _pack_ = 1
@@ -118,14 +100,15 @@ class OpsisEEPROM(ctypes.LittleEndianStructure):
         self.sep_start = b'\0'
         self.sep_end = b'\0'
         self.rmagic = self.DEF_RMAGIC
-        self.crc8_data = self.calculate_crc_data()
-        self.crc8_full = self.calculate_crc_full()
 
         self.eventlog_size = 0
         self.eventlog_data = return_fill_buffer(self.eventlog_data, 0)
 
         self.pcb_pad = return_fill_buffer(self.pcb_pad, 0)
         self.wp_empty = return_fill_buffer(self.wp_empty, 0xff)
+
+        self.crc8_data = self.calculate_crc_data()
+        self.crc8_full = self.calculate_crc_full()
 
     def check(self):
         self.fx2.check()
@@ -144,18 +127,23 @@ class OpsisEEPROM(ctypes.LittleEndianStructure):
     def as_bytearray(self):
         return bytearray((ctypes.c_byte * 256).from_address(ctypes.addressof(self)))
 
-    def calculate_crc_data(self):
+    def data_bytes(self):
         raw_bytes = self.as_bytearray()
+        return raw_bytes[self.__class__.sep_start.offset+1:self.__class__.sep_end.offset]
+
+    def calculate_crc_data(self):
         import crcmod
         data_crc = crcmod.predefined.Crc('crc-8')
-        data_crc.update(raw_bytes[self.__class__.sep_start.offset+1:self.__class__.sep_end.offset])
+        data_crc.update(self.data_bytes())
         return data_crc.crcValue
 
-    def calculate_crc_full(self):
+    def full_bytes(self):
         raw_bytes = self.as_bytearray()
+        return raw_bytes[0:self.__class__.crc8_data.offset] + raw_bytes[self.__class__.crc8_full.offset+1:]
+
+    def calculate_crc_full(self):
         full_crc = crcmod.predefined.Crc('crc-8')
-        full_crc.update(raw_bytes[0:self.__class__.crc8_data.offset])
-        full_crc.update(raw_bytes[self.__class__.crc8_full.offset+1:])
+        full_crc.update(self.full_bytes())
         return full_crc.crcValue
 
     @classmethod
@@ -190,3 +178,35 @@ class OpsisEEPROM(ctypes.LittleEndianStructure):
 
 assert_eq(ctypes.sizeof(OpsisEEPROM), 256)
 assert_eq(OpsisEEPROM.size(), 256)
+
+
+if __name__ == "__main__":
+    e = OpsisEEPROM()
+    print_struct(e)
+    print(e.as_bytearray())
+    e.populate()
+    print_struct(e)
+    print(e.as_bytearray())
+    e.check()
+    import time
+    e.prod_program = int(time.time())
+
+    print("Data bytes:", e.data_bytes())
+    try:
+        assert_eq(e.crc8_data, e.calculate_crc_data())
+        raise SystemError("CRC Check didn't fail!")
+    except AssertionError:
+        pass
+    e.crc8_data = e.calculate_crc_data()
+    assert_eq(e.crc8_data, e.calculate_crc_data())
+
+    print("Full bytes:", e.full_bytes())
+    try:
+        assert_eq(e.crc8_full, e.calculate_crc_full())
+        raise SystemError("CRC Check didn't fail!")
+    except AssertionError:
+        pass
+    e.crc8_full = e.calculate_crc_full()
+    assert_eq(e.crc8_full, e.calculate_crc_full())
+
+    e.check()
