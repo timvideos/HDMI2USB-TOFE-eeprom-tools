@@ -106,6 +106,9 @@ class OpsisEEPROM(ctypes.LittleEndianStructure):
 
         self.pcb_pad = return_fill_buffer(self.pcb_pad, 0)
         self.wp_empty = return_fill_buffer(self.wp_empty, 0xff)
+        if self.wp_mac[0] == 0:
+             self.wp_mac[0] = -1
+             self.wp_mac[1] = -1
 
         self.crc8_data = self.calculate_crc_data()
         self.crc8_full = self.calculate_crc_full()
@@ -165,6 +168,13 @@ class OpsisEEPROM(ctypes.LittleEndianStructure):
     def mac(self):
         return ":".join("%02x" % x for x in self.eui48())
 
+    def mac_barcode(self):
+        import barcode
+        return barcode.get('Code128', self.mac())
+        #return barcode.get('Code39', self.mac().replace(':', '-'))
+        import code128
+        return code128.svg(self.mac(), caption=True)
+
     def eui64(self):
         if self.wp_mac[0] == 0:
             mac = list(self.wp_mac)
@@ -210,3 +220,14 @@ if __name__ == "__main__":
     assert_eq(e.crc8_full, e.calculate_crc_full())
 
     e.check()
+
+    e.wp_mac[0] = -1
+    e.wp_mac[1] = -1
+    e.wp_mac[2] = 0
+    e.wp_mac[3] = 0x12
+    e.wp_mac[4] = 0x34
+    e.wp_mac[5] = 0x56
+    e.wp_mac[6] = 0x78
+    e.wp_mac[7] = 0x9a
+    e.mac_barcode().save('barcode', {'module_height': 7, 'font_size': 12, 'text_distance': 5, 'human': 'MAC - %s' % e.mac()})
+    #open('barcode.svg', 'w').write(e.mac_barcode())
