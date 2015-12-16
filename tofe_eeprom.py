@@ -185,7 +185,7 @@ class DynamicLengthStructure(ctypes.LittleEndianStructure):
     _pack_ = 1
 
     def __init__(self, *args, **kw):
-        super().__init__(*args, *kw)
+        super().__init__(*args, **kw)
         self._len = self._extra_size
 
     @property
@@ -259,7 +259,7 @@ class AtomString(Atom):
         >>> a1.str
         'numato'
         >>> a1.as_bytearray()
-        bytearray(b'\\xff\\x00\\x00\\x07numato\\x00')
+        bytearray(b'\\xff\\xff\\xff\\x07numato\\x00')
         >>> a1.data[:]
         [110, 117, 109, 97, 116, 111, 0]
         >>> a2 = AtomString.create(u"\u2603")
@@ -270,7 +270,11 @@ class AtomString(Atom):
         >>> a2.data[:]
         [226, 152, 131, 0]
         """
-        o = cls(cls.TYPE, 0, 0)
+        o = cls(type=cls.TYPE, index=0xff, crc8=0xff)
+        assert o.type == cls.TYPE
+        assert o.index == 0xff
+        assert o.crc8 == 0xff
+        assert o._len == 0
         o.str = s
         return o
 
@@ -286,92 +290,7 @@ class AtomString(Atom):
         self.data[-1] = 0x0
 
 
-class AtomURL(Atom):
-    TLD_TABLE = {
-        0x1: ".com",
-        0x2: ".org",
-        0x3: ".net",
-        0x4: ".edu",
-        0x5: ".info",
-        0x6: ".biz",
-        0x7: ".us",
-        0x8: ".co",
-        0x9: ".cc",
-        0xA: ".biz",
-        0xB: ".me",
-        0xC: ".tv",
-        0xD: ".io",
-        0xE: ".ly",
-        0xF: ".it",
-        0xFD: "",
-        0xFE: "",
-    }
-
-    _fields_ = [
-        ("tld", ctypes.c_uint8),
-        ("_data", ctypes.c_char * 0),
-    ]
-
-    @staticmethod
-    def split(url):
-        assert "://" not in url, url
-
-        bits = re.split("/", url, maxsplit=1)
-        assert 1 <= len(bits) <= 2
-        if len(bits) == 1:
-            return bits[0], ""
-        elif len(bits) == 2:
-            return bits[0], "/"+bits[1]
-
-    @classmethod
-    def create(cls, url, *args, **kw):
-        r"""
-        >>> u1 = AtomURL.create("https://numato.com")
-        >>> u1.url
-        'https://numato.com'
-        >>> u1.as_bytearray()
-        bytearray(b'\xff\x00\x00\x07\x01numato')
-        >>> u2 = AtomURL.create("https://hdmi2usb.tv")
-        >>> u2.url
-        'https://hdmi2usb.tv'
-        >>> u3 = AtomURL.create("https://hdmi2usb.tv/tofe")
-        >>> u3.url
-        'https://hdmi2usb.tv/tofe'
-        >>> u4 = AtomURL.create("https://abc.info/blah.html")
-        >>> u4.url
-        'https://abc.info/blah.html'
-        """
-        o = cls(cls.TYPE, 0, 0)
-        o.url = url
-        return o
-
-    @property
-    def url(self):
-        domain, after = self.split(bytearray(self.data).decode('ascii'))
-        return "https://%s%s%s" % (domain, self.TLD_TABLE[self.tld], after)
-
-    @url.setter
-    def url(self, url):
-        if '://' in url:
-            _, url = url.split('://', 1)
-        assert url, url
-
-        domain, after = self.split(url)
-        assert domain, domain
-
-        tld = 0xFD
-        for v, t in self.TLD_TABLE.items():
-            if domain.endswith(t):
-                tld = v
-                domain = domain[:-len(t)]
-                break
-
-        rurl = domain.encode('ascii')+after.encode('ascii')
-        self.tld = tld
-        self.len = len(rurl)
-        self.data[:] = rurl[:]
-       
-
+AtomURL = AtomString
 
 class AtomRepo(Atom):
     class AtomRepoContains(ctypes.LittleEndianStructure):
@@ -406,13 +325,17 @@ class AtomRepo(Atom):
         >>> r.rev
         'g480cd42'
         >>> r.as_bytearray()
-        bytearray(b'\xff\x00\x00(\x80\x00github.com/timvideos/abc.git\x00g480cd42\x00')
+        bytearray(b'\xff\xff\xff(\x80\x00github.com/timvideos/abc.git\x00g480cd42\x00')
         """
         c = AtomRepo.AtomRepoContains()
         for name in contains:
             setattr(c, name, True)
 
-        o = cls(cls.TYPE, 0, 0)
+        o = cls(type=cls.TYPE, index=0xff, crc8=0xff)
+        assert o.type == cls.TYPE
+        assert o.index == 0xff
+        assert o.crc8 == 0xff
+        #assert o._len == 1
         o.contains = c
         o.set_urlrev(url, rev)
         return o
@@ -453,7 +376,18 @@ class AtomRepo(Atom):
         self.data[b1:b2] = raw_rev
         self.data[b2] = 0x0
 
+from enum import Enum
+
 class AtomEEPROMInfo(Atom):
+    TYPE = 0x07
+
+    class Types(Enum):
+        SIZE = 0x1
+        TOFE = 0x2
+        USER = 0x3
+        GUID = 0x4
+        EMPTY = 0x5
+
     class Small(ctypes.LittleEndianStructure):
         _pack_ = 1
         _fields_ = [
@@ -484,7 +418,7 @@ class AtomEEPROMInfo(Atom):
     @classmethod
     def create(cls, feature, offset, size):
         r"""
-        >>> e = AtomEEPROMInfo.create(0, 5, 10)
+        >>> e = AtomEEPROMInfo.create(AtomEEPROMInfo.Types.SIZE, 5, 10)
         >>> e.len
         2
         >>> e.offset
@@ -492,9 +426,9 @@ class AtomEEPROMInfo(Atom):
         >>> e.size
         10
         >>> e.as_bytearray()
-        bytearray(b'\xff\x00\x00\x03\x00\x05\n')
+        bytearray(b'\x07\xff\xff\x03\x01\x05\n')
 
-        >>> e = AtomEEPROMInfo.create(0, 700, 10)
+        >>> e = AtomEEPROMInfo.create(AtomEEPROMInfo.Types.SIZE, 700, 10)
         >>> e.len
         4
         >>> e.offset
@@ -502,7 +436,7 @@ class AtomEEPROMInfo(Atom):
         >>> e.size
         10
         >>> e.as_bytearray()
-        bytearray(b'\xff\x00\x00\x05\x00\xbc\x02\n\x00')
+        bytearray(b'\x07\xff\xff\x05\x01\xbc\x02\n\x00')
         """
         if offset < 2**8 and size < 2**8:
             struct = AtomEEPROMInfo.Small
@@ -513,8 +447,8 @@ class AtomEEPROMInfo(Atom):
         else:
             assert False
 
-        o = cls(cls.TYPE, 0, 0)
-        o.feature = feature
+        o = cls(type=cls.TYPE, index=0xff, crc8=0xff)
+        o.feature = feature.value
         o.len = ctypes.sizeof(struct)
         o.offset = offset
         o.size = size
@@ -563,12 +497,16 @@ class AtomProductVersion(AtomString):
 class AtomProductRepo(AtomRepo):
     TYPE = 0x05
 
+class AtomProductSerialNumber(AtomString):
+    TYPE = 0x06
+
+class AtomExtraRepo(AtomRepo):
+    TYPE = 0x9
 
 
 class TOFE_EEPROM(DynamicLengthStructure):
     """Structure representing the TOFE EEPROM format.
     """
-
     _pack_ = 1
     _fields_ = [
         ("magic", ctypes.c_char * 4),
@@ -576,13 +514,15 @@ class TOFE_EEPROM(DynamicLengthStructure):
         ("atoms", ctypes.c_uint8),
         ("crc8", ctypes.c_ubyte),
         ("_len", ctypes.c_uint32),
-        ("_data", ctypes.c_ubyte),
+        ("_data", ctypes.c_ubyte * 0),
     ]
 
-
-    def __init__(self, *args, **kw):
-        self._atoms = []
-        super().__init__(self, *args, *kw)
+    def __init__(self):
+        super().__init__()
+        self.magic = b'TOFE'
+        self.version = 0x1
+        self.atoms = 0
+        self.crc_update()
 
     @classmethod
     def create(cls, *args, **kw):
@@ -591,16 +531,18 @@ class TOFE_EEPROM(DynamicLengthStructure):
         return cls("MAGIC", 0x1, 0, 0xff, 0, '', *args, **kw)
 
     def add_atom(self, atom):
-        atom_size = ctypes.sizeof(atom.__class__) + atom.len
+        atom_size = ctypes.sizeof(atom)
 
         atom_offset = self.len
-        self.len += atom_size
-        assert atom.index == 0xff
+        assert atom.index == 0xff, atom.index
         atom.index = self.atoms
         self.atoms += 1
-        
-        ctypes.resize(self.data, self.len)
+        atom.crc_update()
+
+        self.len += atom_size
         ctypes.memmove(ctypes.addressof(self.data)+atom_offset, ctypes.addressof(atom), atom_size)
+
+        self.crc_update()
 
     def get_atom(self, i):
         current_offset = 0
@@ -611,8 +553,38 @@ class TOFE_EEPROM(DynamicLengthStructure):
             current_offset += ctypes.sizeof(Atom)
             current_offset += a.len
         assert a is not None, a
+        a.crc_check()
         return a
 
+MilkyMistEEPROM = TOFE_EEPROM()
+MilkyMistEEPROM.add_atom(AtomManufacturer.create("numato.com"))
+MilkyMistEEPROM.add_atom(AtomProductID.create("tofe.io/milkymist"))
+MilkyMistEEPROM.add_atom(AtomProductRepo.create(["pcb", "docs"], "tofe.io/milkymist.git", "aaaaaaa"))
+
+a = MilkyMistEEPROM.as_bytearray()
+print(len(a), a)
+
+LowSpeedIOEEPROM = TOFE_EEPROM()
+LowSpeedIOEEPROM.add_atom(AtomManufacturer.create("numato.com"))
+LowSpeedIOEEPROM.add_atom(AtomProductID.create("tofe.io/lowspeedio"))
+LowSpeedIOEEPROM.add_atom(AtomProductRepo.create(["pcb", "docs", "firmware"], "tofe.io/lowspeedio.git", "aaaaaaa"))
+
+b = LowSpeedIOEEPROM.as_bytearray()
+print(len(b), b)
+
+
+Opsis = TOFE_EEPROM()
+Opsis.add_atom(AtomManufacturer.create("numato.com"))
+Opsis.add_atom(AtomProductID.create("opsis.h2u.tv"))
+Opsis.add_atom(AtomProductRepo.create(["pcb"], "r/pcb.git", "aaaaaaa"))
+Opsis.add_atom(AtomProductRepo.create(["sample_code"], "r/sample.git", ""))
+Opsis.add_atom(AtomProductRepo.create(["docs"], "r/docs.git", ""))
+Opsis.add_atom(AtomEEPROMInfo.create(AtomEEPROMInfo.Types.SIZE, 0, 256))
+Opsis.add_atom(AtomEEPROMInfo.create(AtomEEPROMInfo.Types.GUID, 0xf8, 8))
+Opsis.add_atom(AtomEEPROMInfo.create(AtomEEPROMInfo.Types.EMPTY, 0x80, 120))
+
+b = Opsis.as_bytearray()
+print(len(b), b)
 
 if __name__ == "__main__":
     import doctest
