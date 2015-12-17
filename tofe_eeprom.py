@@ -10,33 +10,7 @@ import ctypes
 import binascii
 import crcmod
 
-def assert_eq(a, b):
-    if isinstance(a, ctypes.Array):
-        assert_eq(a._type_, b._type_)
-        assert_eq(a._length_, b._length_)
-        assert_eq(a[:], b[:])
-        return
-
-    assert a == b, "%s (%r) != %s (%r)" % (a, a, b, b)
-
-def return_fill_buffer(b, value):
-    return (b._type_ * b._length_)(*([value] * b._length_))
-
-def print_struct(s, indent=''):
-    for field_name, field_type in s._fields_:
-        field_detail = getattr(s.__class__, field_name)
-        field_value = getattr(s, field_name)
-        print(indent, field_name, end=': ', sep='')
-        if isinstance(field_value, ctypes.Structure):
-            print()
-            print_struct(field_value, indent=indent+'    ')
-        elif isinstance(field_value, ctypes.Array):
-            print(field_value._length_, field_value[:])
-        elif isinstance(field_value, bytes):
-            print(repr(field_value))
-        else:
-            print(hex(field_value))
-
+from utils import *
 
 class DynamicLengthStructure(ctypes.LittleEndianStructure):
     r"""
@@ -239,13 +213,11 @@ class Atom(DynamicLengthStructure):
     TYPE = 0xff
     _fields_ = [
         ("type",    ctypes.c_uint8),
-        ("index",   ctypes.c_uint8),
-        ("crc8",    ctypes.c_uint8),
         ("_len",    ctypes.c_uint8),
         ("_data",   ctypes.c_ubyte * 0),
     ]
 
-assert ctypes.sizeof(Atom) == 4
+assert ctypes.sizeof(Atom) == 2
 
 
 class AtomString(Atom):
@@ -255,39 +227,36 @@ class AtomString(Atom):
         u"""
         >>> a1 = AtomString.create("numato")
         >>> a1.len
-        7
+        6
         >>> a1.str
         'numato'
         >>> a1.as_bytearray()
-        bytearray(b'\\xff\\xff\\xff\\x07numato\\x00')
+        bytearray(b'\\xff\\x06numato')
         >>> a1.data[:]
-        [110, 117, 109, 97, 116, 111, 0]
+        [110, 117, 109, 97, 116, 111]
         >>> a2 = AtomString.create(u"\u2603")
         >>> a2.len
-        4
+        3
         >>> a2.str
         '☃'
         >>> a2.data[:]
-        [226, 152, 131, 0]
+        [226, 152, 131]
         """
-        o = cls(type=cls.TYPE, index=0xff, crc8=0xff)
+        o = cls(type=cls.TYPE)
         assert o.type == cls.TYPE
-        assert o.index == 0xff
-        assert o.crc8 == 0xff
         assert o._len == 0
         o.str = s
         return o
 
     @property
     def str(self):
-        return bytearray(self.data[:-1]).decode('utf-8')
+        return bytearray(self.data[:]).decode('utf-8')
 
     @str.setter
     def str(self, s):
         b = s.encode('utf-8')
-        self.len = len(b)+1
-        self.data[:-1] = b[:]
-        self.data[-1] = 0x0
+        self.len = len(b)
+        self.data[:] = b[:]
 
 
 AtomURL = AtomString
@@ -325,16 +294,14 @@ class AtomRepo(Atom):
         >>> r.rev
         'g480cd42'
         >>> r.as_bytearray()
-        bytearray(b'\xff\xff\xff(\x80\x00github.com/timvideos/abc.git\x00g480cd42\x00')
+        bytearray(b'\xff(\x80\x00github.com/timvideos/abc.git\x00g480cd42\x00')
         """
         c = AtomRepo.AtomRepoContains()
         for name in contains:
             setattr(c, name, True)
 
-        o = cls(type=cls.TYPE, index=0xff, crc8=0xff)
+        o = cls(type=cls.TYPE)
         assert o.type == cls.TYPE
-        assert o.index == 0xff
-        assert o.crc8 == 0xff
         #assert o._len == 1
         o.contains = c
         o.set_urlrev(url, rev)
@@ -386,7 +353,8 @@ class AtomEEPROMInfo(Atom):
         TOFE = 0x2
         USER = 0x3
         GUID = 0x4
-        EMPTY = 0x5
+        HOLE = 0x5
+        VENDOR = 0xff
 
     class Small(ctypes.LittleEndianStructure):
         _pack_ = 1
@@ -426,7 +394,7 @@ class AtomEEPROMInfo(Atom):
         >>> e.size
         10
         >>> e.as_bytearray()
-        bytearray(b'\x07\xff\xff\x03\x01\x05\n')
+        bytearray(b'\x07\x03\x01\x05\n')
 
         >>> e = AtomEEPROMInfo.create(AtomEEPROMInfo.Types.SIZE, 700, 10)
         >>> e.len
@@ -436,7 +404,7 @@ class AtomEEPROMInfo(Atom):
         >>> e.size
         10
         >>> e.as_bytearray()
-        bytearray(b'\x07\xff\xff\x05\x01\xbc\x02\n\x00')
+        bytearray(b'\x07\x05\x01\xbc\x02\n\x00')
         """
         if offset < 2**8 and size < 2**8:
             struct = AtomEEPROMInfo.Small
@@ -447,7 +415,7 @@ class AtomEEPROMInfo(Atom):
         else:
             assert False
 
-        o = cls(type=cls.TYPE, index=0xff, crc8=0xff)
+        o = cls(type=cls.TYPE)
         o.feature = feature.value
         o.len = ctypes.sizeof(struct)
         o.offset = offset
@@ -534,10 +502,7 @@ class TOFE_EEPROM(DynamicLengthStructure):
         atom_size = ctypes.sizeof(atom)
 
         atom_offset = self.len
-        assert atom.index == 0xff, atom.index
-        atom.index = self.atoms
         self.atoms += 1
-        atom.crc_update()
 
         self.len += atom_size
         ctypes.memmove(ctypes.addressof(self.data)+atom_offset, ctypes.addressof(atom), atom_size)
@@ -549,7 +514,6 @@ class TOFE_EEPROM(DynamicLengthStructure):
         a = None
         for i in range(0, i+1):
             a = Atom.from_address(ctypes.addressof(self.data)+current_offset)
-            assert a.index == i, "%i != %i" % (a.index, i)
             current_offset += ctypes.sizeof(Atom)
             current_offset += a.len
         assert a is not None, a
@@ -572,16 +536,16 @@ LowSpeedIOEEPROM.add_atom(AtomProductRepo.create(["pcb", "docs", "firmware"], "t
 b = LowSpeedIOEEPROM.as_bytearray()
 print(len(b), b)
 
-
 Opsis = TOFE_EEPROM()
-Opsis.add_atom(AtomManufacturer.create("numato.com"))
-Opsis.add_atom(AtomProductID.create("opsis.h2u.tv"))
-Opsis.add_atom(AtomProductRepo.create(["pcb"], "r/pcb.git", "aaaaaaa"))
-Opsis.add_atom(AtomProductRepo.create(["sample_code"], "r/sample.git", ""))
-Opsis.add_atom(AtomProductRepo.create(["docs"], "r/docs.git", ""))
-Opsis.add_atom(AtomEEPROMInfo.create(AtomEEPROMInfo.Types.SIZE, 0, 256))
-Opsis.add_atom(AtomEEPROMInfo.create(AtomEEPROMInfo.Types.GUID, 0xf8, 8))
-Opsis.add_atom(AtomEEPROMInfo.create(AtomEEPROMInfo.Types.EMPTY, 0x80, 120))
+Opsis.add_atom(AtomManufacturer.create("numato.com"))                        # 
+Opsis.add_atom(AtomProductID.create("opsis.h2u.tv"))                         # 
+Opsis.add_atom(AtomProductRepo.create(["pcb"], "/r/pcb.git", "aaaaaaa"))     # PCB repo
+Opsis.add_atom(AtomProductRepo.create(["sample_code"], "/r/sample.git", "")) # Sample code repo
+Opsis.add_atom(AtomProductRepo.create(["docs"], "/r/docs.git", ""))          # Docs repo
+Opsis.add_atom(AtomEEPROMInfo.create(AtomEEPROMInfo.Types.SIZE, 0, 256))     # EEPROM is 256 bytes / 2048 bits in size
+Opsis.add_atom(AtomEEPROMInfo.create(AtomEEPROMInfo.Types.VENDOR, 0, 8))     # FX2 Config bytes
+Opsis.add_atom(AtomEEPROMInfo.create(AtomEEPROMInfo.Types.HOLE, 0x80, 120))  # Section which returns 0xff
+Opsis.add_atom(AtomEEPROMInfo.create(AtomEEPROMInfo.Types.GUID, 0xf8, 8))    # MAC address
 
 b = Opsis.as_bytearray()
 print(len(b), b)
