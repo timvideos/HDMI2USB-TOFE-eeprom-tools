@@ -4,13 +4,20 @@
 
 from __future__ import print_function
 
-import re
-import math
-import ctypes
 import binascii
 import crcmod
+import ctypes
+import enum
+import math
+import re
+import sys
 
 from utils import *
+
+# Remove after https://bugs.python.org/issue19023 is fixed.
+assert sys.byteorder == 'little'
+ctypes.LittleEndianUnion = ctypes.Union
+
 
 class DynamicLengthStructure(ctypes.LittleEndianStructure):
     r"""
@@ -160,11 +167,12 @@ class DynamicLengthStructure(ctypes.LittleEndianStructure):
 
     def __init__(self, *args, **kw):
         super().__init__(*args, **kw)
-        self._len = self._extra_size
+        if self._len == 0:
+            self._len = self._extra_size
 
     @property
     def _extra_start(self):
-        return self.__class__._len.offset+1
+        return self.__class__._len.offset+self.__class__._len.size
 
     @property
     def _extra_end(self):
@@ -180,7 +188,10 @@ class DynamicLengthStructure(ctypes.LittleEndianStructure):
 
     @len.setter
     def len(self, value):
-        ctypes.resize(self, self._extra_end + value)
+        rsize = self._extra_end + value
+        if ctypes.sizeof(self) < rsize:
+            ctypes.resize(self, rsize)
+
         self._len = self._extra_size + value
 
     @property
@@ -216,6 +227,18 @@ class Atom(DynamicLengthStructure):
         ("_len",    ctypes.c_uint8),
         ("_data",   ctypes.c_ubyte * 0),
     ]
+
+    def __repr__(self):
+        r"""
+        >>> repr(Atom(0xff, 0))
+        "Atom(b'\\xff\\x00')"
+        >>> a = Atom(0xfe)
+        >>> a.len = 2
+        >>> a.data[:] = [0x1, 0x2]
+        >>> repr(a)
+        "Atom(b'\\xfe\\x02\\x01\\x02')"
+        """
+        return "%s(%s)" % (self.__class__.__name__, repr(self.as_bytearray())[10:-1])
 
 assert ctypes.sizeof(Atom) == 2
 
@@ -258,104 +281,258 @@ class AtomString(Atom):
         self.len = len(b)
         self.data[:] = b[:]
 
+    def __repr__(self):
+        r"""
+        >>> a1 = AtomString.create("numato")
+        >>> repr(a1)
+        "AtomString('numato')"
+        >>> a2 = AtomString.create(u"\u2603")
+        >>> repr(a2)
+        "AtomString('☃')"
+        """
+        return u"%s(%r)" % (self.__class__.__name__, self.str)
 
-AtomURL = AtomString
 
-class AtomRepo(Atom):
-    class AtomRepoContains(ctypes.LittleEndianStructure):
-        _pack_ = 1
-        _fields_ = [
-             ("vendor", ctypes.c_uint8, 1),
-             ("reserved", ctypes.c_uint8, 3),
-             ("sample_code", ctypes.c_uint8, 1),
-             ("docs", ctypes.c_uint8, 1),
-             ("firmware", ctypes.c_uint8, 1),
-             ("pcb", ctypes.c_uint8, 1),
-        ]
-
-    assert ctypes.sizeof(AtomRepoContains) == 1
-
-    _fields_ = [
-        ("contains", AtomRepoContains),
-        ("revtype", ctypes.c_uint8),
-        ("_data", ctypes.c_char * 0),
-    ]
+class AtomURL(AtomString):
 
     @classmethod
-    def create(cls, contains, url, rev):
-        r"""
-        >>> r = AtomRepo.create(["pcb"], "github.com/timvideos/abc.git", "g480cd42")
-        >>> r.contains.vendor
-        0
-        >>> r.contains.pcb
-        1
-        >>> r.url
-        'github.com/timvideos/abc.git'
-        >>> r.rev
-        'g480cd42'
-        >>> r.as_bytearray()
-        bytearray(b'\xff(\x80\x00github.com/timvideos/abc.git\x00g480cd42\x00')
+    def create(cls, url):
+        u"""
+        >>> a1 = AtomURL.create("https://numato")
+        >>> a1.len
+        6
+        >>> a1.url
+        'https://numato'
+        >>> a1.as_bytearray()
+        bytearray(b'\\xff\\x06numato')
+        >>> a1.data[:]
+        [110, 117, 109, 97, 116, 111]
+        >>> a2 = AtomURL.create(u"http://\u2603")
+        >>> a2.len
+        3
+        >>> a2.url
+        'https://☃'
+        >>> a2.data[:]
+        [226, 152, 131]
         """
-        c = AtomRepo.AtomRepoContains()
-        for name in contains:
-            setattr(c, name, True)
-
         o = cls(type=cls.TYPE)
         assert o.type == cls.TYPE
-        #assert o._len == 1
-        o.contains = c
-        o.set_urlrev(url, rev)
+        assert o._len == 0
+        o.url = url
         return o
-
-    def _find_first_null(self):
-        for i, d in enumerate(self.data):
-            if d == 0:
-                return i
 
     @property
     def url(self):
-        return bytearray(self.data[0:self._find_first_null()]).decode('utf-8')
+        return "https://" + self.str
 
     @url.setter
-    def url(self, value):
-        self.set_urlrev(value, self.rev)
+    def url(self, url):
+        if "://" in url:
+            url = url.split("://", 1)[-1]
+        self.str = url
+
+    def __repr__(self):
+        r"""
+        >>> a1 = AtomURL.create("numato")
+        >>> repr(a1)
+        "AtomURL('https://numato')"
+        >>> a2 = AtomURL.create(u"\u2603")
+        >>> repr(a2)
+        "AtomURL('https://☃')"
+        """
+        return u"%s(%r)" % (self.__class__.__name__, self.url)
+
+
+class AtomRelativeURL(AtomString):
+    _fields_ = [
+        ("index", ctypes.c_uint8),
+        ("_data", ctypes.c_char * 0),
+    ]
+
+    rurl = AtomString.str
+
+    @classmethod
+    def create(cls, index, url):
+        u"""
+        >>> a1 = AtomRelativeURL.create(2, "numato")
+        >>> a1.len
+        6
+        >>> a1.str
+        'numato'
+        >>> a1.as_bytearray()
+        bytearray(b'\\xff\\x07\\x02numato')
+        >>> a1.data[:]
+        [110, 117, 109, 97, 116, 111]
+        >>> a2 = AtomRelativeURL.create(4, u"\u2603")
+        >>> a2.len
+        3
+        >>> a2.str
+        '☃'
+        >>> a2.data[:]
+        [226, 152, 131]
+        >>> a2.as_bytearray()
+        bytearray(b'\\xff\\x04\\x04\\xe2\\x98\\x83')
+        """
+        assert not url.startswith('/')
+        o = cls(type=cls.TYPE)
+        assert o.type == cls.TYPE
+        assert o._len == 1
+        o.index = index
+        o.str = url
+        o._relative_atom = None
+        return o
+
+    def __repr__(self):
+        r"""
+        >>> a1 = AtomRelativeURL.create(1, "numato")
+        >>> repr(a1)
+        "AtomRelativeURL(1, 'numato')"
+        >>> a2 = AtomRelativeURL.create(2, u"\u2603")
+        >>> repr(a2)
+        "AtomRelativeURL(2, '☃')"
+        >>> ar = AtomURL.create("a")
+        >>> a3 = AtomRelativeURL.create(2, "b")
+        >>> a3._relative_atom = ar
+        >>> repr(a3)
+        "AtomRelativeURL('https://a/b')"
+        """
+        if self._relative_atom:
+            assert isinstance(self._relative_atom, AtomURL)
+            return u"%s('%s/%s')" % (self.__class__.__name__, self._relative_atom.url, self.str)
+        else:
+            return u"%s(%i, '%s')" % (self.__class__.__name__, self.index, self.str)
+
+
+class AtomExpandInt(Atom):
+
+    @classmethod
+    def create(cls, v):
+        r"""
+        >>> a1 = AtomExpandInt.create(0)
+        >>> a1.len
+        0
+        >>> a1.v
+        0
+        >>> a1.as_bytearray()
+        bytearray(b'\xff\x00')
+        >>> a1 = AtomExpandInt.create(2)
+        >>> a1.len
+        1
+        >>> a1.v
+        2
+        >>> a1.as_bytearray()
+        bytearray(b'\xff\x01\x02')
+        >>> a2 = AtomExpandInt.create(2**63)
+        >>> a2.len
+        8
+        >>> a2.v
+        9223372036854775808
+        >>> a2.as_bytearray()
+        bytearray(b'\xff\x08\x00\x00\x00\x00\x00\x00\x00\x80')
+        """
+        o = cls(type=cls.TYPE)
+        assert o.type == cls.TYPE
+        assert o._len == 0
+        o.v = v
+        return o
+    
+    @property
+    def v(self):
+        v = 0
+        for i, b in enumerate(self.data):
+            v |= b << i * 8
+        return v
+
+    @v.setter
+    def v(self, v):
+        b = []
+        while v > 0:
+            b.append(v & 0xff)
+            v = v >> 8
+
+        self.len = len(b)
+        self.data[:] = bytearray(b)
+
+    def __repr__(self):
+        r"""
+        >>> a1 = AtomExpandInt.create(2)
+        >>> repr(a1)
+        'AtomExpandInt(2)'
+        >>> a2 = AtomExpandInt.create(2**63)
+        >>> repr(a2)
+        'AtomExpandInt(9223372036854775808)'
+        """
+        return "%s(%i)" % (self.__class__.__name__, self.v)
+
+
+class AtomTimestamp(AtomExpandInt):
+    EPOCH = 1420070400 # 2015/01/01 @ 12:00am (UTC)
+
+    @classmethod
+    def create(cls, ts):
+        r"""
+        >>> t1 = 1421070400.0 # 2015-01-12 13:46:40 UTC
+        >>> a1 = AtomTimestamp.create(t1)
+        >>> a1._len
+        3
+        >>> a1.ts
+        1421070400
+        >>> a1.as_bytearray()
+        bytearray(b'\xff\x03@B\x0f')
+
+        >>> t2 = 1451606400.0 # 2016-01-01 00:00:00 UTC
+        >>> a2 = AtomTimestamp.create(t2)
+        >>> a2._len
+        4
+        >>> a2.ts
+        1451606400
+        >>> a2.as_bytearray()
+        bytearray(b'\xff\x04\x803\xe1\x01')
+
+        >>> t3 = 1606780801.0 # 2020-01-12 00:00:01 UTC
+        >>> a3 = AtomTimestamp.create(t3)
+        >>> a3._len
+        4
+        >>> a3.ts
+        1606780801
+        >>> a3.as_bytearray()
+        bytearray(b'\xff\x04\x81\xf9 \x0b')
+
+        >>> a4 = AtomTimestamp.create(2**63)
+        >>> a4._len
+        8
+        >>> a4.ts
+        9223372036854775808
+        >>> a4.as_bytearray()
+        bytearray(b'\xff\x08\x00r[\xab\xff\xff\xff\x7f')
+        """
+        o = cls(type=cls.TYPE)
+        assert o.type == cls.TYPE
+        o.ts = int(round(ts))
+        return o
 
     @property
-    def rev(self):
-        return bytearray(self.data[self._find_first_null()+1:-1]).decode('utf-8')
+    def ts(self):
+        return self.EPOCH + self.v
 
-    @rev.setter
-    def rev(self, value):
-        self.set_urlrev(self.url, value)
+    @ts.setter
+    def ts(self, ts):
+        assert (ts - self.EPOCH) > 0, (ts - self.EPOCH)
+        self.v = ts - self.EPOCH
+        
+    def __repr__(self):
+        r"""
+        >>> a1 = AtomTimestamp.create(1421070400)
+        >>> repr(a1)
+        'AtomTimestamp(1421070400)'
+        >>> a2 = AtomTimestamp.create(2**63)
+        >>> repr(a2)
+        'AtomTimestamp(9223372036854775808)'
+        """
+        return u"%s(%i)" % (self.__class__.__name__, self.ts)
 
-    def set_urlrev(self, url, rev):
-        raw_url = url.encode('utf-8')
-        raw_rev = rev.encode('utf-8')
 
-        a1 = 0
-        a2 = a1 + len(raw_url)
-        b1 = a2+1
-        b2 = b1 + len(raw_rev)
-
-        self.len = b2 - a1 + 1
-        self.data[a1:a2] = raw_url
-        self.data[a2] = 0x0
-        self.data[b1:b2] = raw_rev
-        self.data[b2] = 0x0
-
-from enum import Enum
-
-class AtomEEPROMInfo(Atom):
-    TYPE = 0x07
-
-    class Types(Enum):
-        SIZE = 0x1
-        TOFE = 0x2
-        USER = 0x3
-        GUID = 0x4
-        HOLE = 0x5
-        VENDOR = 0xff
-
+class AtomSizeOffset(Atom):
     class Small(ctypes.LittleEndianStructure):
         _pack_ = 1
         _fields_ = [
@@ -378,15 +555,14 @@ class AtomEEPROMInfo(Atom):
         ]
 
     _fields_ = [
-        ("feature", ctypes.c_uint8),
         ("_data", ctypes.c_ubyte * 0),
     ]
 
 
     @classmethod
-    def create(cls, feature, offset, size):
+    def create(cls, offset, size):
         r"""
-        >>> e = AtomEEPROMInfo.create(AtomEEPROMInfo.Types.SIZE, 5, 10)
+        >>> e = AtomSizeOffset.create(5, 10)
         >>> e.len
         2
         >>> e.offset
@@ -394,9 +570,9 @@ class AtomEEPROMInfo(Atom):
         >>> e.size
         10
         >>> e.as_bytearray()
-        bytearray(b'\x07\x03\x01\x05\n')
+        bytearray(b'\xff\x02\x05\n')
 
-        >>> e = AtomEEPROMInfo.create(AtomEEPROMInfo.Types.SIZE, 700, 10)
+        >>> e = AtomSizeOffset.create(700, 10)
         >>> e.len
         4
         >>> e.offset
@@ -404,19 +580,18 @@ class AtomEEPROMInfo(Atom):
         >>> e.size
         10
         >>> e.as_bytearray()
-        bytearray(b'\x07\x05\x01\xbc\x02\n\x00')
+        bytearray(b'\xff\x04\xbc\x02\n\x00')
         """
         if offset < 2**8 and size < 2**8:
-            struct = AtomEEPROMInfo.Small
+            struct = AtomSizeOffset.Small
         elif offset < 2**16 and size < 2**16:
-            struct = AtomEEPROMInfo.Medium
+            struct = AtomSizeOffset.Medium
         elif offset < 2**32 and size < 2**32:
-            struct = AtomEEPROMInfo.Large
+            struct = AtomSizeOffset.Large
         else:
             assert False
 
         o = cls(type=cls.TYPE)
-        o.feature = feature.value
         o.len = ctypes.sizeof(struct)
         o.offset = offset
         o.size = size
@@ -424,12 +599,12 @@ class AtomEEPROMInfo(Atom):
 
     @property
     def _data_struct(self):
-        if self.len == ctypes.sizeof(AtomEEPROMInfo.Small):
-            return AtomEEPROMInfo.Small.from_address(ctypes.addressof(self.data))
-        elif self.len == ctypes.sizeof(AtomEEPROMInfo.Medium):
-            return AtomEEPROMInfo.Medium.from_address(ctypes.addressof(self.data))
-        elif self.len == ctypes.sizeof(AtomEEPROMInfo.Large):
-            return AtomEEPROMInfo.Large.from_address(ctypes.addressof(self.data))
+        if self.len == ctypes.sizeof(AtomSizeOffset.Small):
+            return AtomSizeOffset.Small.from_address(ctypes.addressof(self.data))
+        elif self.len == ctypes.sizeof(AtomSizeOffset.Medium):
+            return AtomSizeOffset.Medium.from_address(ctypes.addressof(self.data))
+        elif self.len == ctypes.sizeof(AtomSizeOffset.Large):
+            return AtomSizeOffset.Large.from_address(ctypes.addressof(self.data))
         else:
             assert False
 
@@ -449,35 +624,207 @@ class AtomEEPROMInfo(Atom):
     def size(self, value):
         self._data_struct.size = value
 
+    def __repr__(self):
+        r"""
+        >>> a1 = AtomSizeOffset.create(1, 2)
+        >>> repr(a1)
+        'AtomSizeOffset(1, 2)'
+        >>> a2 = AtomSizeOffset.create(2**31, 2)
+        >>> repr(a2)
+        'AtomSizeOffset(2147483648, 2)'
+        """
+        return u"%s(%i, %i)" % (self.__class__.__name__, self.offset, self.size)
 
-class AtomDesigner(AtomURL):
-    TYPE = 0x01
+def _l(license, version):
+    return license << 3 | version
 
-class AtomManufacturer(AtomURL):
-    TYPE = 0x02
-
-class AtomProductID(AtomURL):
-    TYPE = 0x03
-
-class AtomProductVersion(AtomString):
-    TYPE = 0x04
-
-class AtomProductRepo(AtomRepo):
-    TYPE = 0x05
-
-class AtomProductSerialNumber(AtomString):
-    TYPE = 0x06
-
-class AtomExtraRepo(AtomRepo):
-    TYPE = 0x9
-
-
-class TOFE_EEPROM(DynamicLengthStructure):
-    """Structure representing the TOFE EEPROM format.
-    """
+class _NamesStruct(ctypes.LittleEndianStructure):
     _pack_ = 1
     _fields_ = [
-        ("magic", ctypes.c_char * 4),
+        ("license", ctypes.c_uint8, 5),
+        ("version", ctypes.c_uint8, 3),
+    ]
+class _NamesUnion(ctypes.LittleEndianUnion):
+    _pack_ = 1
+    _fields_ = [
+        ("_value", ctypes.c_uint8),
+        ("_parts", _NamesStruct)
+    ]
+
+class AtomLicense(Atom):
+    @enum.unique
+    class Names(enum.IntEnum):
+
+        Invalid         = 0
+        # -
+        MIT             = _l(1, 1)
+        # -
+        BSD_simple      = _l(2, 1)
+        BSD_new         = _l(2, 2)
+        BSD_isc         = _l(2, 3)
+        # -
+        Apache_v2       = _l(3, 1)
+        # -
+        GPL_v2          = _l(4, 1)
+        GPL_v3          = _l(4, 2)
+        # -
+        LGPL_v21        = _l(5, 1)
+        LGPL_v3         = _l(5, 2)
+        # -
+        CC0_v1          = _l(6, 1)
+        # -
+        CC_BY_v10       = _l(7, 1)
+        CC_BY_v20       = _l(7, 2)
+        CC_BY_v25       = _l(7, 3)
+        CC_BY_v30       = _l(7, 4)
+        CC_BY_v40       = _l(7, 5)
+        # -
+        CC_BY_SA_v10    = _l(8, 1)
+        CC_BY_SA_v20    = _l(8, 2)
+        CC_BY_SA_v25    = _l(8, 3)
+        CC_BY_SA_v30    = _l(8, 4)
+        CC_BY_SA_v40    = _l(8, 5)
+        # -
+        TAPR_v10        = _l(9, 1) 
+        # -
+        CERN_v11        = _l(10, 1) 
+        CERN_v12        = _l(10, 2) 
+        # -
+        Proprietary     = 0xff
+
+    _anonymous_ = ("_license",)
+    _fields_ = [
+        ("_license", _NamesUnion),
+        ("_data", ctypes.c_char * 0),
+    ]
+
+    @classmethod
+    def create(cls, value):
+        r"""
+        >>> a1 = AtomLicense.create(AtomLicense.Names.GPL_v2)
+        >>> a1._len
+        1
+        >>> a1.license
+        'GPL'
+        >>> a1.version
+        2
+        >>> a1.as_bytearray()
+        bytearray(b'\xff\x01!')
+        >>> a2 = AtomLicense.create(AtomLicense.Names.CC_BY_SA_v30)
+        >>> a2._len
+        1
+        >>> a2.license
+        'CC BY SA'
+        >>> a2.version
+        3.0
+        >>> a2.as_bytearray()
+        bytearray(b'\xff\x01D')
+        """
+        o = cls(type=cls.TYPE)
+        assert o.type == cls.TYPE
+        assert o._len == 1
+        o.value = value
+        return o
+
+    @property
+    def value(self):
+        return self.Names(self._value)
+
+    @value.setter
+    def value(self, license):
+        assert isinstance(license, self.Names), repr(license)
+        self._value = license.value
+        
+    @property
+    def license(self):
+        return " ".join(self.value.name.split('_')[:-1])
+
+    @property
+    def version(self):
+        vstr = self.value.name.rsplit('_')[-1]
+        if not vstr.startswith('v'):
+            return vstr
+        
+        if len(vstr) == 2:
+            return int(vstr[1])
+        elif len(vstr) == 3:
+            return int(vstr[1]) + (int(vstr[2])/10.0)
+
+        assert False, "Invalid version %r" % vstr
+
+    def __repr__(self):
+        r"""
+        >>> a1 = AtomLicense.create(AtomLicense.Names.GPL_v2)
+        >>> repr(a1)
+        'AtomLicense(GPL, 2)'
+        >>> a2 = AtomLicense.create(AtomLicense.Names.CC_BY_SA_v30)
+        >>> repr(a2)
+        'AtomLicense(CC BY SA, 3.0)'
+        """
+        return u"%s(%s, %s)" % (self.__class__.__name__, self.license, self.version)
+
+
+# Actual atoms
+AtomRevision = AtomString
+AtomBatchID = AtomTimestamp
+
+ATOMS = [
+    # 0x0_ - Product Identification atoms
+    (0x01, "Designer ID",               AtomURL),
+    (0x02, "Manufacturer ID",           AtomURL),
+    (0x03, "Product ID",                AtomURL),
+    (0x04, "Product Version",           AtomString),
+    (0x05, "Product Serial",            AtomString),
+    (0x06, "Product Part Number",       AtomString),
+    # 0x1_ - Auxiliary atoms
+    (0x10, "Auxiliary URL",             AtomURL),
+    # 0x2_ - PCB information atoms
+    (0x20, "PCB Repository",            AtomRelativeURL),
+    (0x21, "PCB Revision",              AtomRevision),
+    (0x22, "PCB License",               AtomLicense),
+    (0x23, "PCB Production Batch ID",   AtomBatchID),
+    (0x24, "PCB Population Batch ID",   AtomBatchID),
+    # 0x3_ - Firmware atoms
+    (0x30, "Firmware Description",      AtomString),
+    (0x31, "Firmware Repository",       AtomRelativeURL),
+    (0x32, "Firmware Revision",         AtomRevision),
+    (0x33, "Firmware License",          AtomLicense),
+    (0x34, "Firmware Program Date",     AtomTimestamp),
+    # 0x4_ - EEPROM atoms
+    (0x40, "EEPROM Total Size",         AtomSizeOffset),
+    (0x41, "EEPROM Vendor Data",        AtomSizeOffset),
+    (0x42, "EEPROM TOFE Data",          AtomSizeOffset),
+    (0x43, "EEPROM User Data",          AtomSizeOffset),
+    (0x44, "EEPROM GUID",               AtomSizeOffset),
+    (0x45, "EEPROM Hole",               AtomSizeOffset),
+    (0x46, "EEPROM Part Number",        AtomString),
+    # 0x5_ - Other information links
+    (0x50, "Sample Code Repository",    AtomRelativeURL),
+    (0x51, "Documentation Site",        AtomRelativeURL),
+]
+
+ATOMS_MAP = {}
+l = 0
+for i, name, atom_type in ATOMS:
+    assert i > l
+    assert i not in ATOMS_MAP
+    l = i
+    exec("""
+class Atom%(name)s(%(type)s):
+    TYPE = %(i)s
+
+ATOMS_MAP[%(i)s] = Atom%(name)s
+""" % {
+        "name": "".join(name.split()),
+        "type": atom_type.__name__,
+        "i": hex(i),
+    })
+
+
+class AtomCommon(DynamicLengthStructure):
+    _pack_ = 1
+    _fields_ = [
+        ("magic", ctypes.c_char * 5),
         ("version", ctypes.c_uint8),
         ("atoms", ctypes.c_uint8),
         ("crc8", ctypes.c_ubyte),
@@ -485,71 +832,133 @@ class TOFE_EEPROM(DynamicLengthStructure):
         ("_data", ctypes.c_ubyte * 0),
     ]
 
+    MAGIC = b'\x00\x01\x02\x03\x04'
+    RAGIC = b'\0x4\0x3\0x2\x01\x00'
+
     def __init__(self):
         super().__init__()
-        self.magic = b'TOFE'
+        self.populate()
+
+    def populate(self):
+        self.magic = self.MAGIC
         self.version = 0x1
         self.atoms = 0
+        self.len = len(self.RAGIC)
+        self.data[:] = self.RAGIC[:]
         self.crc_update()
 
-    @classmethod
-    def create(cls, *args, **kw):
-        """
-        """
-        return cls("MAGIC", 0x1, 0, 0xff, 0, '', *args, **kw)
-
     def add_atom(self, atom):
+        assert bytes(self.ragic) == self.RAGIC
+
+        if self.atoms > 0:
+            assert atom.type >= self.get_atom(self.atoms-1).type
+
+        if isinstance(atom, AtomRelativeURL):
+            assert atom.index < self.atoms, "%i < %i" % (atom.index, self.atoms)
+
         atom_size = ctypes.sizeof(atom)
 
-        atom_offset = self.len
+        atom_offset = self.len - len(self.RAGIC)
         self.atoms += 1
 
         self.len += atom_size
         ctypes.memmove(ctypes.addressof(self.data)+atom_offset, ctypes.addressof(atom), atom_size)
-
+        self.data[self.len - len(self.RAGIC):] = self.RAGIC[:]
         self.crc_update()
 
-    def get_atom(self, i):
+    def get_atom(self, v):
+        assert v < self.atoms, "%i < %i" % (v, self.atoms)
         current_offset = 0
         a = None
-        for i in range(0, i+1):
-            a = Atom.from_address(ctypes.addressof(self.data)+current_offset)
+        for i in range(0, v+1):
+            a = Atom.from_address(ctypes.addressof(self._data)+current_offset)
             current_offset += ctypes.sizeof(Atom)
-            current_offset += a.len
+            current_offset += a._len
         assert a is not None, a
-        a.crc_check()
+        assert a.type in ATOMS_MAP
+        a = ATOMS_MAP[a.type].from_address(ctypes.addressof(a))
+
+        if isinstance(a, AtomRelativeURL):
+            assert a.index != i, "%i != %i" % (a.index, i)
+            a._relative_atom = self.get_atom(a.index)
+
         return a
 
-MilkyMistEEPROM = TOFE_EEPROM()
-MilkyMistEEPROM.add_atom(AtomManufacturer.create("numato.com"))
-MilkyMistEEPROM.add_atom(AtomProductID.create("tofe.io/milkymist"))
-MilkyMistEEPROM.add_atom(AtomProductRepo.create(["pcb", "docs"], "tofe.io/milkymist.git", "aaaaaaa"))
+    def __repr__(self):
+        s = self.__class__.__name__ + "\n"
+        s += print_struct(self) + "\n"
+        s += "atoms (%i, %i bytes):\n" % (self.atoms, self.len - len(self.RAGIC))
+        for i in range(0, self.atoms):
+            s += "    (%i, %r)\n" % (i, self.get_atom(i))
+        s += "ragic: %s\n" % self.ragic
+        return s[:-1]
 
-a = MilkyMistEEPROM.as_bytearray()
-print(len(a), a)
+    @property
+    def ragic(self):
+        return bytearray(self.data[self.len - len(self.RAGIC):])
 
-LowSpeedIOEEPROM = TOFE_EEPROM()
-LowSpeedIOEEPROM.add_atom(AtomManufacturer.create("numato.com"))
-LowSpeedIOEEPROM.add_atom(AtomProductID.create("tofe.io/lowspeedio"))
-LowSpeedIOEEPROM.add_atom(AtomProductRepo.create(["pcb", "docs", "firmware"], "tofe.io/lowspeedio.git", "aaaaaaa"))
 
-b = LowSpeedIOEEPROM.as_bytearray()
-print(len(b), b)
+class TOFEAtoms(AtomCommon):
+    """Structure representing the TOFE EEPROM format."""
+    MAGIC = b'TOFE\0'
+    RAGIC = MAGIC[::-1]
 
-Opsis = TOFE_EEPROM()
-Opsis.add_atom(AtomManufacturer.create("numato.com"))                        # 
-Opsis.add_atom(AtomProductID.create("opsis.h2u.tv"))                         # 
-Opsis.add_atom(AtomProductRepo.create(["pcb"], "/r/pcb.git", "aaaaaaa"))     # PCB repo
-Opsis.add_atom(AtomProductRepo.create(["sample_code"], "/r/sample.git", "")) # Sample code repo
-Opsis.add_atom(AtomProductRepo.create(["docs"], "/r/docs.git", ""))          # Docs repo
-Opsis.add_atom(AtomEEPROMInfo.create(AtomEEPROMInfo.Types.SIZE, 0, 256))     # EEPROM is 256 bytes / 2048 bits in size
-Opsis.add_atom(AtomEEPROMInfo.create(AtomEEPROMInfo.Types.VENDOR, 0, 8))     # FX2 Config bytes
-Opsis.add_atom(AtomEEPROMInfo.create(AtomEEPROMInfo.Types.HOLE, 0x80, 120))  # Section which returns 0xff
-Opsis.add_atom(AtomEEPROMInfo.create(AtomEEPROMInfo.Types.GUID, 0xf8, 8))    # MAC address
-
-b = Opsis.as_bytearray()
-print(len(b), b)
 
 if __name__ == "__main__":
     import doctest
     doctest.testmod()
+
+    print("====")
+    test = TOFEAtoms()
+    b = test.as_bytearray()
+    print(len(b), b)
+    print(repr(test))
+    print("----")
+    test.add_atom(AtomManufacturerID.create("numato.com"))
+    b = test.as_bytearray()
+    print(len(b), b)
+    print(repr(test))
+    print("----")
+    test.add_atom(AtomProductID.create("opsis.h2u.tv"))
+    b = test.as_bytearray()
+    print(len(b), b)
+    print(repr(test))
+    print("----")
+    test.add_atom(AtomPCBRepository.create(1, "r/pcb.git"))
+    b = test.as_bytearray()
+    print(len(b), b)
+    print(repr(test))
+    print("====")
+
+    import time
+
+    # Testing MilkyMist EEPROM
+    # ------------------------------------------------
+    milkymist_eeprom = TOFEAtoms()
+    milkymist_eeprom.add_atom(AtomManufacturerID.create("numato.com"))
+    milkymist_eeprom.add_atom(AtomProductID.create("tofe.io/milkymist"))
+    milkymist_eeprom.add_atom(AtomPCBRepository.create(1, "r/pcb.git"))
+    milkymist_eeprom.add_atom(AtomPCBRevision.create("aaaaaaa"))
+    milkymist_eeprom.add_atom(AtomPCBLicense.create(AtomPCBLicense.Names.CC_BY_SA_v40))
+    milkymist_eeprom.add_atom(AtomPCBProductionBatchID.create(time.time()))
+    milkymist_eeprom.add_atom(AtomPCBPopulationBatchID.create(time.time()))
+    milkymist_eeprom.add_atom(AtomEEPROMTotalSize.create(0, 128))
+    milkymist_eeprom.add_atom(AtomEEPROMPartNumber.create("24LC01BT-1/OT"))
+
+    b = milkymist_eeprom.as_bytearray()
+    print("-"*10)
+    print("MilkyMist")
+    print(len(b), b)
+    print(repr(milkymist_eeprom))
+
+    # LowSpeedIO EEPROM
+    # ------------------------------------------------
+    lowspeedio_eeprom = TOFEAtoms()
+    lowspeedio_eeprom.add_atom(AtomManufacturerID.create("numato.com"))
+    lowspeedio_eeprom.add_atom(AtomProductID.create("tofe.io/lowspeedio"))
+
+    b = lowspeedio_eeprom.as_bytearray()
+    print("-"*10)
+    print("LowSpeedIO")
+    print(len(b), b)
+    print(repr(lowspeedio_eeprom))
