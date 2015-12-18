@@ -33,16 +33,16 @@ struct tofe_atom {
 	__u8 data[];
 } __attribute__ ((packed));
 
-/* Atom styles */
-enum tofe_atom_enumstyle {
-	ATOM_STYLE_invalid	= 0xff,
-	ATOM_STYLE_string	= 0x00,
-	ATOM_STYLE_url		= 0x10,
-	ATOM_STYLE_relative_url	= 0x20,
-	ATOM_STYLE_expand_int	= 0x30,
-	ATOM_STYLE_license	= 0x40,
-	ATOM_STYLE_size_offset	= 0x50,
-	ATOM_STYLE_binary_blob	= 0x60,
+/* Atom Formats */
+enum tofe_atomfmt {
+	ATOM_FMT_invalid	= 0xff,
+	ATOM_FMT_string		= 0x00,
+	ATOM_FMT_url		= 0x10,
+	ATOM_FMT_relative_url	= 0x20,
+	ATOM_FMT_expand_int	= 0x30,
+	ATOM_FMT_license	= 0x40,
+	ATOM_FMT_size_offset	= 0x50,
+	ATOM_FMT_binary_blob	= 0x60,
 };
 
 #define TOFE_EXTRA_LEN(x) \
@@ -50,50 +50,50 @@ enum tofe_atom_enumstyle {
 
 const struct tofe_atom* tofe_atom_get(__u8 index, const struct tofe_header* hdr);
 
-#define DEFINE_TOFE_ATOM_GET_STYLE(name) \
-	inline const struct tofe_atomstyle_ ## name * tofe_atom_get_ ## name (__u8 index, const struct tofe_header* hdr) { \
+#define DEFINE_TOFE_ATOM_GET_FMT(name) \
+	inline const struct tofe_atomfmt_ ## name * tofe_atom_get_ ## name (__u8 index, const struct tofe_header* hdr) { \
 		const struct tofe_atom* atom = tofe_atom_get(index, hdr); \
-		assert(ATOM_STYLE_ ## name == tofe_atom_style(atom); \
-		return (struct tofe_atomstyle_ ## name *)(atom); \
+		assert(ATOM_FMT_ ## name == tofe_atomfmt(atom); \
+		return (struct tofe_atomfmt_ ## name *)(atom); \
 	}
 
-DEFINE_TOFE_ATOM_GET_STYLE(string);
-DEFINE_TOFE_ATOM_GET_STYLE(url);
-DEFINE_TOFE_ATOM_GET_STYLE(relative_url);
-DEFINE_TOFE_ATOM_GET_STYLE(expand_int);
-DEFINE_TOFE_ATOM_GET_STYLE(license);
-DEFINE_TOFE_ATOM_GET_STYLE(size_offset);
+DEFINE_TOFE_ATOM_GET_FMT(string);
+DEFINE_TOFE_ATOM_GET_FMT(url);
+DEFINE_TOFE_ATOM_GET_FMT(relative_url);
+DEFINE_TOFE_ATOM_GET_FMT(expand_int);
+DEFINE_TOFE_ATOM_GET_FMT(license);
+DEFINE_TOFE_ATOM_GET_FMT(size_offset);
 
 char* tofe_atom_print(char* ptr, const struct tofe_atom* atom);
-#define DECLARE_TOFE_ATOM_GET_STYLE(name) \
-	char* tofe_atom_print_ ## name (const struct tofe_atomstyle_ ## name * atom);
+#define DECLARE_TOFE_ATOM_GET_FMT(name) \
+	char* tofe_atom_print_ ## name (const struct tofe_atomfmt_ ## name * atom);
 
-/* String Style Atom */
-struct tofe_atomstyle_string {
+/* String Format */
+struct tofe_atomfmt_string {
 	struct tofe_atom_header;
 	char str[];
 } __attribute__ ((packed));
 
-/* URL Style Atom */
-struct tofe_atomstyle_url {
+/* URL Format */
+struct tofe_atomfmt_url {
 	struct tofe_atom_header;
 	char url[];
 } __attribute__ ((packed));
 
-/* Relative URL Style Atom */
-struct tofe_atomstyle_relative_url {
+/* Relative URL Format */
+struct tofe_atomfmt_relative_url {
 	struct tofe_atom_header;
 	__u8 atom_index;
 	char rurl[];
 } __attribute__ ((packed));
 
-/* Expand Int Style Atom */
-struct tofe_atomstyle_expand_int {
+/* Expand Int Format */
+struct tofe_atomfmt_expand_int {
 	struct tofe_atom_header;
 	__u8 data[];
 } __attribute__ ((packed));
 
-#define tofe_atomstyle_expand_int_get(atom_ptr, value) \
+#define tofe_atomfmt_expand_int_get(atom_ptr, value) \
 	do { \
 		assert(atom.len <= sizeof(value)); \
 		value = 0; \
@@ -102,8 +102,8 @@ struct tofe_atomstyle_expand_int {
 		} \
 	} while(false)
 
-/* License Style Atom */
-struct tofe_atomstyle_license {
+/* License Format */
+struct tofe_atomfmt_license {
 	struct tofe_atom_header;
 	__u8 license;
 } __attribute__ ((packed));
@@ -111,7 +111,7 @@ struct tofe_atomstyle_license {
 #define TOFE_LICENSE_ENUM(type, version) \
 	type << 3 | version
 
-enum tofe_atomstyle_license_enum {
+enum tofe_atomfmt_license_enum {
         // MIT
         MIT             = TOFE_LICENSE_ENUM(1, 1),
         // BSD
@@ -150,12 +150,12 @@ enum tofe_atomstyle_license_enum {
         Proprietary     = 0xff
 };
 
-const char* tofe_atomstyle_license_name(const struct tofe_atomstyle_license* atom);
-const char* tofe_atomstyle_license_version(const struct tofe_atomstyle_license* atom);
+const char* tofe_atomfmt_license_name(const struct tofe_atomfmt_license* atom);
+const char* tofe_atomfmt_license_version(const struct tofe_atomfmt_license* atom);
 
 /* EEPROM Atom */
 #define DEFINE_TOFE_ATOM_SIZE_OFFSET(name, type) \
-	struct tofe_atomstyle_size_offset_ ## name { \
+	struct tofe_atomfmt_size_offset_ ## name { \
 		struct tofe_atom_header; \
 		type offset; \
 		type size; \
@@ -165,36 +165,36 @@ DEFINE_TOFE_ATOM_SIZE_OFFSET(small, __u8);
 DEFINE_TOFE_ATOM_SIZE_OFFSET(medium, __u8);
 DEFINE_TOFE_ATOM_SIZE_OFFSET(large, __u8);
 
-#define tofe_atomstyle_size_offset_get_size(atom_ptr, value) \
+#define tofe_atomfmt_size_offset_get_size(atom_ptr, value) \
 	do { \
 		assert(sizeof(value) > (atom_ptr)->len / 2); \
 		switch ((atom_ptr)->len) { \
 		case 0x2: \
-			((tofe_atomstyle_size_offset_small)(atom_ptr))->size; \
+			((tofe_atomfmt_size_offset_small)(atom_ptr))->size; \
 			break; \
 		case 0x4: \
-			((tofe_atomstyle_size_offset_medium)(atom_ptr))->size; \
+			((tofe_atomfmt_size_offset_medium)(atom_ptr))->size; \
 			break; \
 		case 0x8: \
-			((tofe_atomstyle_size_offset_large)(atom_ptr))->size; \
+			((tofe_atomfmt_size_offset_large)(atom_ptr))->size; \
 			break; \
 		default: \
 			assert(false); \
 		} \
 	} while(false)
 
-#define tofe_atomstyle_size_offset_get_offset(atom_ptr, value) \
+#define tofe_atomfmt_size_offset_get_offset(atom_ptr, value) \
 	do { \
 		assert(sizeof(value) > (atom_ptr)->len / 2); \
 		switch ((atom_ptr)->len) { \
 		case 0x2: \
-			((tofe_atomstyle_size_offset_small)(atom_ptr))->offset; \
+			((tofe_atomfmt_size_offset_small)(atom_ptr))->offset; \
 			break; \
 		case 0x4: \
-			((tofe_atomstyle_size_offset_medium)(atom_ptr))->offset; \
+			((tofe_atomfmt_size_offset_medium)(atom_ptr))->offset; \
 			break; \
 		case 0x8: \
-			((tofe_atomstyle_size_offset_large)(atom_ptr))->offset; \
+			((tofe_atomfmt_size_offset_large)(atom_ptr))->offset; \
 			break; \
 		default: \
 			assert(false); \
@@ -205,26 +205,26 @@ DEFINE_TOFE_ATOM_SIZE_OFFSET(large, __u8);
 // Specific atom types
 #define TOFE_ATOM_TYPE_ENUM(string, url, relative_url, expand_int, license, size_offset, binary_blob) \
 	(( \
-		(string 	? ATOM_STYLE_string		: 0) | \
-		(url		? ATOM_STYLE_url		: 0) | \
-		(relative_url	? ATOM_STYLE_relative_url	: 0) | \
-		(expand_int	? ATOM_STYLE_expand_int		: 0) | \
-		(license	? ATOM_STYLE_license		: 0) | \
-		(size_offset	? ATOM_STYLE_size_offset	: 0) | \
-		(binary_blob	? ATOM_STYLE_binary_blob	: 0) \
+		(string 	? ATOM_FMT_string	: 0) | \
+		(url		? ATOM_FMT_url		: 0) | \
+		(relative_url	? ATOM_FMT_relative_url	: 0) | \
+		(expand_int	? ATOM_FMT_expand_int	: 0) | \
+		(license	? ATOM_FMT_license	: 0) | \
+		(size_offset	? ATOM_FMT_size_offset	: 0) | \
+		(binary_blob	? ATOM_FMT_binary_blob	: 0) \
 	) << 4) | \
 	(string | url | relative_url | expand_int | license | size_offset | binary_blob)
 
-enum tofe_atom_enumtype {
+enum tofe_atom_type {
 	ATOM_INVALID_x00 = 0,
 	ATOM_INVALID_xFF = 0xff,
-	//                                            /------------- String Style
-	//                                            | /----------- URL Style
-	//                                            | | /--------- Relative URL Style
-	//                                            | | | /------- Expand Int Style
-	//                                            | | | | /----- License Style
-	//                                            | | | | | /--- Size Offset Style
-	// Product identification atoms               | | | | | | /- Binary Block Style
+	//                                            /------------- String Format
+	//                                            | /----------- URL Format
+	//                                            | | /--------- Relative URL Format
+	//                                            | | | /------- Expand Int Format
+	//                                            | | | | /----- License Format
+	//                                            | | | | | /--- Size Offset Format
+	// Product identification atoms               | | | | | | /- Binary Block Format
 	ATOM_DESIGNER_ID	= TOFE_ATOM_TYPE_ENUM(_,1,_,_,_,_,_),
 	ATOM_MANUFACTURER_ID	= TOFE_ATOM_TYPE_ENUM(_,2,_,_,_,_,_),
 	ATOM_PRODUCT_ID		= TOFE_ATOM_TYPE_ENUM(_,3,_,_,_,_,_),
@@ -258,16 +258,16 @@ enum tofe_atom_enumtype {
 	ATOM_INFO_DOCS		= TOFE_ATOM_TYPE_ENUM(_,_,4,_,_,_,_),
 };
 
-const char* tofe_atom_enumtype_str(enum tofe_atom_enumtype type);
+const char* tofe_atom_typeenum_str(enum tofe_atom_type type);
 inline const char* tofe_atom_type_str(const struct tofe_atom* atom) {
-	return tofe_atom_enumtype_str(atom->type);
+	return tofe_atom_typeenum_str(atom->type);
 }
 
-inline enum tofe_atom_enumstyle tofe_atom_style_for_type(enum tofe_atom_enumtype type) {
+inline enum tofe_atomfmt tofe_atomfmt_for_type(enum tofe_atom_type type) {
 	return (type & 0xf0);
 }
-inline enum tofe_atom_enumstyle tofe_atom_style(const struct tofe_atom* atom) {
-	return tofe_atom_style_for_type(atom->type);
+inline enum tofe_atomfmt tofe_atomfmt(const struct tofe_atom* atom) {
+	return tofe_atomfmt_for_type(atom->type);
 }
 
 #endif  // __TOFE_EEPROM

@@ -243,14 +243,14 @@ class Atom(DynamicLengthStructure):
 assert ctypes.sizeof(Atom) == 2
 
 
-class AtomStyleString(Atom):
-    STYLE = 0x00
+class AtomFormatString(Atom):
+    FORMAT = 0x00
     TYPES = {}
 
     @classmethod
     def create(cls, s):
         u"""
-        >>> a1 = AtomStyleString.create("numato")
+        >>> a1 = AtomFormatString.create("numato")
         >>> a1.len
         6
         >>> a1.str
@@ -259,7 +259,7 @@ class AtomStyleString(Atom):
         bytearray(b'\\xff\\x06numato')
         >>> a1.data[:]
         [110, 117, 109, 97, 116, 111]
-        >>> a2 = AtomStyleString.create(u"\u2603")
+        >>> a2 = AtomFormatString.create(u"\u2603")
         >>> a2.len
         3
         >>> a2.str
@@ -285,24 +285,24 @@ class AtomStyleString(Atom):
 
     def __repr__(self):
         r"""
-        >>> a1 = AtomStyleString.create("numato")
+        >>> a1 = AtomFormatString.create("numato")
         >>> repr(a1)
-        "AtomStyleString('numato')"
-        >>> a2 = AtomStyleString.create(u"\u2603")
+        "AtomFormatString('numato')"
+        >>> a2 = AtomFormatString.create(u"\u2603")
         >>> repr(a2)
-        "AtomStyleString('☃')"
+        "AtomFormatString('☃')"
         """
         return u"%s(%r)" % (self.__class__.__name__, self.str)
 
 
-class AtomStyleURL(AtomStyleString):
-    STYLE = 0x10
+class AtomFormatURL(AtomFormatString):
+    FORMAT = 0x10
     TYPES = {}
 
     @classmethod
     def create(cls, url):
         u"""
-        >>> a1 = AtomStyleURL.create("https://numato")
+        >>> a1 = AtomFormatURL.create("https://numato")
         >>> a1.len
         6
         >>> a1.url
@@ -311,7 +311,7 @@ class AtomStyleURL(AtomStyleString):
         bytearray(b'\\xff\\x06numato')
         >>> a1.data[:]
         [110, 117, 109, 97, 116, 111]
-        >>> a2 = AtomStyleURL.create(u"http://\u2603")
+        >>> a2 = AtomFormatURL.create(u"http://\u2603")
         >>> a2.len
         3
         >>> a2.url
@@ -337,18 +337,18 @@ class AtomStyleURL(AtomStyleString):
 
     def __repr__(self):
         r"""
-        >>> a1 = AtomStyleURL.create("numato")
+        >>> a1 = AtomFormatURL.create("numato")
         >>> repr(a1)
-        "AtomStyleURL('https://numato')"
-        >>> a2 = AtomStyleURL.create(u"\u2603")
+        "AtomFormatURL('https://numato')"
+        >>> a2 = AtomFormatURL.create(u"\u2603")
         >>> repr(a2)
-        "AtomStyleURL('https://☃')"
+        "AtomFormatURL('https://☃')"
         """
         return u"%s(%r)" % (self.__class__.__name__, self.url)
 
 
-class AtomStyleRelativeURL(AtomStyleString):
-    STYLE = 0x20
+class AtomFormatRelativeURL(AtomFormatString):
+    FORMAT = 0x20
     TYPES = {}
 
     _fields_ = [
@@ -356,12 +356,12 @@ class AtomStyleRelativeURL(AtomStyleString):
         ("_data", ctypes.c_char * 0),
     ]
 
-    rurl = AtomStyleString.str
+    rurl = AtomFormatString.str
 
     @classmethod
     def create(cls, index, url):
         u"""
-        >>> a1 = AtomStyleRelativeURL.create(2, "numato")
+        >>> a1 = AtomFormatRelativeURL.create(2, "numato")
         >>> a1.len
         6
         >>> a1.str
@@ -370,7 +370,7 @@ class AtomStyleRelativeURL(AtomStyleString):
         bytearray(b'\\xff\\x07\\x02numato')
         >>> a1.data[:]
         [110, 117, 109, 97, 116, 111]
-        >>> a2 = AtomStyleRelativeURL.create(4, u"\u2603")
+        >>> a2 = AtomFormatRelativeURL.create(4, u"\u2603")
         >>> a2.len
         3
         >>> a2.str
@@ -391,45 +391,45 @@ class AtomStyleRelativeURL(AtomStyleString):
 
     def __repr__(self):
         r"""
-        >>> a1 = AtomStyleRelativeURL.create(1, "numato")
+        >>> a1 = AtomFormatRelativeURL.create(1, "numato")
         >>> repr(a1)
-        "AtomStyleRelativeURL(1, 'numato')"
-        >>> a2 = AtomStyleRelativeURL.create(2, u"\u2603")
+        "AtomFormatRelativeURL(1, 'numato')"
+        >>> a2 = AtomFormatRelativeURL.create(2, u"\u2603")
         >>> repr(a2)
-        "AtomStyleRelativeURL(2, '☃')"
-        >>> ar = AtomStyleURL.create("a")
-        >>> a3 = AtomStyleRelativeURL.create(2, "b")
+        "AtomFormatRelativeURL(2, '☃')"
+        >>> ar = AtomFormatURL.create("a")
+        >>> a3 = AtomFormatRelativeURL.create(2, "b")
         >>> a3._relative_atom = ar
         >>> repr(a3)
-        "AtomStyleRelativeURL('https://a/b')"
+        "AtomFormatRelativeURL('https://a/b')"
         """
         if self._relative_atom:
-            assert isinstance(self._relative_atom, AtomStyleURL)
+            assert isinstance(self._relative_atom, AtomFormatURL)
             return u"%s('%s/%s')" % (self.__class__.__name__, self._relative_atom.url, self.str)
         else:
             return u"%s(%i, '%s')" % (self.__class__.__name__, self.index, self.str)
 
 
-class AtomStyleExpandInt(Atom):
+class AtomFormatExpandInt(Atom):
 
     @classmethod
     def create(cls, v):
         r"""
-        >>> a1 = AtomStyleExpandInt.create(0)
+        >>> a1 = AtomFormatExpandInt.create(0)
         >>> a1.len
         0
         >>> a1.v
         0
         >>> a1.as_bytearray()
         bytearray(b'\xff\x00')
-        >>> a1 = AtomStyleExpandInt.create(2)
+        >>> a1 = AtomFormatExpandInt.create(2)
         >>> a1.len
         1
         >>> a1.v
         2
         >>> a1.as_bytearray()
         bytearray(b'\xff\x01\x02')
-        >>> a2 = AtomStyleExpandInt.create(2**63)
+        >>> a2 = AtomFormatExpandInt.create(2**63)
         >>> a2.len
         8
         >>> a2.v
@@ -462,18 +462,18 @@ class AtomStyleExpandInt(Atom):
 
     def __repr__(self):
         r"""
-        >>> a1 = AtomStyleExpandInt.create(2)
+        >>> a1 = AtomFormatExpandInt.create(2)
         >>> repr(a1)
-        'AtomStyleExpandInt(2)'
-        >>> a2 = AtomStyleExpandInt.create(2**63)
+        'AtomFormatExpandInt(2)'
+        >>> a2 = AtomFormatExpandInt.create(2**63)
         >>> repr(a2)
-        'AtomStyleExpandInt(9223372036854775808)'
+        'AtomFormatExpandInt(9223372036854775808)'
         """
         return "%s(%i)" % (self.__class__.__name__, self.v)
 
 
-class AtomStyleTimestamp(AtomStyleExpandInt):
-    STYLE = 0x30
+class AtomFormatTimestamp(AtomFormatExpandInt):
+    FORMAT = 0x30
     TYPES = {}
 
     EPOCH = 1420070400 # 2015/01/01 @ 12:00am (UTC)
@@ -482,7 +482,7 @@ class AtomStyleTimestamp(AtomStyleExpandInt):
     def create(cls, ts):
         r"""
         >>> t1 = 1421070400.0 # 2015-01-12 13:46:40 UTC
-        >>> a1 = AtomStyleTimestamp.create(t1)
+        >>> a1 = AtomFormatTimestamp.create(t1)
         >>> a1._len
         3
         >>> a1.ts
@@ -491,7 +491,7 @@ class AtomStyleTimestamp(AtomStyleExpandInt):
         bytearray(b'\xff\x03@B\x0f')
 
         >>> t2 = 1451606400.0 # 2016-01-01 00:00:00 UTC
-        >>> a2 = AtomStyleTimestamp.create(t2)
+        >>> a2 = AtomFormatTimestamp.create(t2)
         >>> a2._len
         4
         >>> a2.ts
@@ -500,7 +500,7 @@ class AtomStyleTimestamp(AtomStyleExpandInt):
         bytearray(b'\xff\x04\x803\xe1\x01')
 
         >>> t3 = 1606780801.0 # 2020-01-12 00:00:01 UTC
-        >>> a3 = AtomStyleTimestamp.create(t3)
+        >>> a3 = AtomFormatTimestamp.create(t3)
         >>> a3._len
         4
         >>> a3.ts
@@ -508,7 +508,7 @@ class AtomStyleTimestamp(AtomStyleExpandInt):
         >>> a3.as_bytearray()
         bytearray(b'\xff\x04\x81\xf9 \x0b')
 
-        >>> a4 = AtomStyleTimestamp.create(2**63)
+        >>> a4 = AtomFormatTimestamp.create(2**63)
         >>> a4._len
         8
         >>> a4.ts
@@ -532,12 +532,12 @@ class AtomStyleTimestamp(AtomStyleExpandInt):
         
     def __repr__(self):
         r"""
-        >>> a1 = AtomStyleTimestamp.create(1421070400)
+        >>> a1 = AtomFormatTimestamp.create(1421070400)
         >>> repr(a1)
-        'AtomStyleTimestamp(1421070400)'
-        >>> a2 = AtomStyleTimestamp.create(2**63)
+        'AtomFormatTimestamp(1421070400)'
+        >>> a2 = AtomFormatTimestamp.create(2**63)
         >>> repr(a2)
-        'AtomStyleTimestamp(9223372036854775808)'
+        'AtomFormatTimestamp(9223372036854775808)'
         """
         return u"%s(%i)" % (self.__class__.__name__, self.ts)
 
@@ -559,8 +559,8 @@ class _NamesUnion(ctypes.LittleEndianUnion):
         ("_parts", _NamesStruct)
     ]
 
-class AtomStyleLicense(Atom):
-    STYLE = 0x40
+class AtomFormatLicense(Atom):
+    FORMAT = 0x40
     TYPES = {}
 
     @enum.unique
@@ -612,7 +612,7 @@ class AtomStyleLicense(Atom):
     @classmethod
     def create(cls, value):
         r"""
-        >>> a1 = AtomStyleLicense.create(AtomStyleLicense.Names.GPL_v2)
+        >>> a1 = AtomFormatLicense.create(AtomFormatLicense.Names.GPL_v2)
         >>> a1._len
         1
         >>> a1.license
@@ -621,7 +621,7 @@ class AtomStyleLicense(Atom):
         2
         >>> a1.as_bytearray()
         bytearray(b'\xff\x01!')
-        >>> a2 = AtomStyleLicense.create(AtomStyleLicense.Names.CC_BY_SA_v30)
+        >>> a2 = AtomFormatLicense.create(AtomFormatLicense.Names.CC_BY_SA_v30)
         >>> a2._len
         1
         >>> a2.license
@@ -665,18 +665,18 @@ class AtomStyleLicense(Atom):
 
     def __repr__(self):
         r"""
-        >>> a1 = AtomStyleLicense.create(AtomStyleLicense.Names.GPL_v2)
+        >>> a1 = AtomFormatLicense.create(AtomFormatLicense.Names.GPL_v2)
         >>> repr(a1)
-        'AtomStyleLicense(GPL, 2)'
-        >>> a2 = AtomStyleLicense.create(AtomStyleLicense.Names.CC_BY_SA_v30)
+        'AtomFormatLicense(GPL, 2)'
+        >>> a2 = AtomFormatLicense.create(AtomFormatLicense.Names.CC_BY_SA_v30)
         >>> repr(a2)
-        'AtomStyleLicense(CC BY SA, 3.0)'
+        'AtomFormatLicense(CC BY SA, 3.0)'
         """
         return u"%s(%s, %s)" % (self.__class__.__name__, self.license, self.version)
 
 
-class AtomStyleSizeOffset(Atom):
-    STYLE = 0x50
+class AtomFormatSizeOffset(Atom):
+    FORMAT = 0x50
     TYPES = {}
 
     class Small(ctypes.LittleEndianStructure):
@@ -708,7 +708,7 @@ class AtomStyleSizeOffset(Atom):
     @classmethod
     def create(cls, offset, size):
         r"""
-        >>> e = AtomStyleSizeOffset.create(5, 10)
+        >>> e = AtomFormatSizeOffset.create(5, 10)
         >>> e.len
         2
         >>> e.offset
@@ -718,7 +718,7 @@ class AtomStyleSizeOffset(Atom):
         >>> e.as_bytearray()
         bytearray(b'\xff\x02\x05\n')
 
-        >>> e = AtomStyleSizeOffset.create(700, 10)
+        >>> e = AtomFormatSizeOffset.create(700, 10)
         >>> e.len
         4
         >>> e.offset
@@ -729,11 +729,11 @@ class AtomStyleSizeOffset(Atom):
         bytearray(b'\xff\x04\xbc\x02\n\x00')
         """
         if offset < 2**8 and size < 2**8:
-            struct = AtomStyleSizeOffset.Small
+            struct = AtomFormatSizeOffset.Small
         elif offset < 2**16 and size < 2**16:
-            struct = AtomStyleSizeOffset.Medium
+            struct = AtomFormatSizeOffset.Medium
         elif offset < 2**32 and size < 2**32:
-            struct = AtomStyleSizeOffset.Large
+            struct = AtomFormatSizeOffset.Large
         else:
             assert False
 
@@ -745,12 +745,12 @@ class AtomStyleSizeOffset(Atom):
 
     @property
     def _data_struct(self):
-        if self.len == ctypes.sizeof(AtomStyleSizeOffset.Small):
-            return AtomStyleSizeOffset.Small.from_address(ctypes.addressof(self.data))
-        elif self.len == ctypes.sizeof(AtomStyleSizeOffset.Medium):
-            return AtomStyleSizeOffset.Medium.from_address(ctypes.addressof(self.data))
-        elif self.len == ctypes.sizeof(AtomStyleSizeOffset.Large):
-            return AtomStyleSizeOffset.Large.from_address(ctypes.addressof(self.data))
+        if self.len == ctypes.sizeof(AtomFormatSizeOffset.Small):
+            return AtomFormatSizeOffset.Small.from_address(ctypes.addressof(self.data))
+        elif self.len == ctypes.sizeof(AtomFormatSizeOffset.Medium):
+            return AtomFormatSizeOffset.Medium.from_address(ctypes.addressof(self.data))
+        elif self.len == ctypes.sizeof(AtomFormatSizeOffset.Large):
+            return AtomFormatSizeOffset.Large.from_address(ctypes.addressof(self.data))
         else:
             assert False
 
@@ -772,67 +772,67 @@ class AtomStyleSizeOffset(Atom):
 
     def __repr__(self):
         r"""
-        >>> a1 = AtomStyleSizeOffset.create(1, 2)
+        >>> a1 = AtomFormatSizeOffset.create(1, 2)
         >>> repr(a1)
-        'AtomStyleSizeOffset(1, 2)'
-        >>> a2 = AtomStyleSizeOffset.create(2**31, 2)
+        'AtomFormatSizeOffset(1, 2)'
+        >>> a2 = AtomFormatSizeOffset.create(2**31, 2)
         >>> repr(a2)
-        'AtomStyleSizeOffset(2147483648, 2)'
+        'AtomFormatSizeOffset(2147483648, 2)'
         """
         return u"%s(%i, %i)" % (self.__class__.__name__, self.offset, self.size)
 
 # Actual atoms
 ATOMS = [
     # Product Identification atoms
-    ("Designer ID",               AtomStyleURL),
-    ("Manufacturer ID",           AtomStyleURL),
-    ("Product ID",                AtomStyleURL),
-    ("Product Version",           AtomStyleString),
-    ("Product Serial",            AtomStyleString),
-    ("Product Part Number",       AtomStyleString),
+    ("Designer ID",               AtomFormatURL),
+    ("Manufacturer ID",           AtomFormatURL),
+    ("Product ID",                AtomFormatURL),
+    ("Product Version",           AtomFormatString),
+    ("Product Serial",            AtomFormatString),
+    ("Product Part Number",       AtomFormatString),
     # Auxiliary atoms
-    ("Auxiliary URL",             AtomStyleURL),
+    ("Auxiliary URL",             AtomFormatURL),
     # 0x2_ - PCB information atoms
-    ("PCB Repository",            AtomStyleRelativeURL),
-    ("PCB Revision",              AtomStyleString),
-    ("PCB License",               AtomStyleLicense),
-    ("PCB Production Batch ID",   AtomStyleTimestamp),
-    ("PCB Population Batch ID",   AtomStyleTimestamp),
+    ("PCB Repository",            AtomFormatRelativeURL),
+    ("PCB Revision",              AtomFormatString),
+    ("PCB License",               AtomFormatLicense),
+    ("PCB Production Batch ID",   AtomFormatTimestamp),
+    ("PCB Population Batch ID",   AtomFormatTimestamp),
     # 0x3_ - Firmware atoms
-    ("Firmware Description",      AtomStyleString),
-    ("Firmware Repository",       AtomStyleRelativeURL),
-    ("Firmware Revision",         AtomStyleString),
-    ("Firmware License",          AtomStyleLicense),
-    ("Firmware Program Date",     AtomStyleTimestamp),
+    ("Firmware Description",      AtomFormatString),
+    ("Firmware Repository",       AtomFormatRelativeURL),
+    ("Firmware Revision",         AtomFormatString),
+    ("Firmware License",          AtomFormatLicense),
+    ("Firmware Program Date",     AtomFormatTimestamp),
     # 0x4_ - EEPROM atoms
-    ("EEPROM Total Size",         AtomStyleSizeOffset),
-    ("EEPROM Vendor Data",        AtomStyleSizeOffset),
-    ("EEPROM TOFE Data",          AtomStyleSizeOffset),
-    ("EEPROM User Data",          AtomStyleSizeOffset),
-    ("EEPROM GUID",               AtomStyleSizeOffset),
-    ("EEPROM Hole",               AtomStyleSizeOffset),
-    ("EEPROM Part Number",        AtomStyleString),
+    ("EEPROM Total Size",         AtomFormatSizeOffset),
+    ("EEPROM Vendor Data",        AtomFormatSizeOffset),
+    ("EEPROM TOFE Data",          AtomFormatSizeOffset),
+    ("EEPROM User Data",          AtomFormatSizeOffset),
+    ("EEPROM GUID",               AtomFormatSizeOffset),
+    ("EEPROM Hole",               AtomFormatSizeOffset),
+    ("EEPROM Part Number",        AtomFormatString),
     # 0x5_ - Other information links
-    ("Sample Code Repository",    AtomStyleRelativeURL),
-    ("Documentation Site",        AtomStyleRelativeURL),
+    ("Sample Code Repository",    AtomFormatRelativeURL),
+    ("Documentation Site",        AtomFormatRelativeURL),
 ]
 
 ATOMS_TYPES = {}
-for i, (name, atom_style_cls) in enumerate(ATOMS):
-    atom_i = len(atom_style_cls.TYPES)+1
-    atom_type = atom_style_cls.STYLE | atom_i
+for i, (name, atom_format_cls) in enumerate(ATOMS):
+    atom_i = len(atom_format_cls.TYPES)+1
+    atom_type = atom_format_cls.FORMAT | atom_i
     assert atom_type not in ATOMS_TYPES
     exec("""
-class Atom%(name)s(%(style)s):
+class Atom%(name)s(%(format)s):
     ORDER = %(i)i
     TYPE = %(atom_type)s
 
 ATOMS_TYPES[%(atom_type)s] = Atom%(name)s
-%(style)s.TYPES[%(atom_i)s] = Atom%(name)s
+%(format)s.TYPES[%(atom_i)s] = Atom%(name)s
 """ % {
         "i": i,
         "name": "".join(name.split()),
-        "style": atom_style_cls.__name__,
+        "format": atom_format_cls.__name__,
         "atom_i": hex(atom_i),
         "atom_type": hex(atom_type),
     })
@@ -870,7 +870,7 @@ class AtomCommon(DynamicLengthStructure):
         if self.atoms > 0:
             assert atom.ORDER >= self.get_atom(self.atoms-1).ORDER
 
-        if isinstance(atom, AtomStyleRelativeURL):
+        if isinstance(atom, AtomFormatRelativeURL):
             assert atom.index < self.atoms, "%i < %i" % (atom.index, self.atoms)
 
         atom_size = ctypes.sizeof(atom)
@@ -895,7 +895,7 @@ class AtomCommon(DynamicLengthStructure):
         assert a.type in ATOMS_TYPES
         a = ATOMS_TYPES[a.type].from_address(ctypes.addressof(a))
 
-        if isinstance(a, AtomStyleRelativeURL):
+        if isinstance(a, AtomFormatRelativeURL):
             assert a.index != i, "%i != %i" % (a.index, i)
             a._relative_atom = self.get_atom(a.index)
 

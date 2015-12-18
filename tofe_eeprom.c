@@ -200,16 +200,16 @@ const char* tofe_atom_type_enum_str(enum tofe_atom_type_enum type) {
 	}
 }
 
-char* tofe_atom_print_string(char* ptr, const struct tofe_atomstyle_string* atom) {
+char* tofe_atom_print_string(char* ptr, const struct tofe_atomfmt_string* atom) {
 	return strncpy(ptr, atom->str, atom->len);
 }
 
-char* tofe_atom_print_url(char* ptr, const struct tofe_atomstyle_url* atom) {
+char* tofe_atom_print_url(char* ptr, const struct tofe_atomfmt_url* atom) {
 	ptr = stpcpy(ptr, "https://");
 	return strncpy(ptr, atom->url, atom->len);
 }
 
-char* tofe_atom_print_relative_url(char* ptr, const struct tofe_atomstyle_relative_url* atom) {
+char* tofe_atom_print_relative_url(char* ptr, const struct tofe_atomfmt_relative_url* atom) {
 	ptr = stpcpy(ptr, "https://");
 	// ptr = tofe_atom_print_url(ptr, tofe_atom_get_url(hdr, atom->atom_index));
 	ptr++ = '/';
@@ -217,27 +217,27 @@ char* tofe_atom_print_relative_url(char* ptr, const struct tofe_atomstyle_relati
 	return strncpy(ptr, atom->rurl, atom->len - TOFE_EXTRA_LEN(atom));
 }
 
-char* tofe_atom_print_expand_int(char* ptr, const struct tofe_atomstyle_expand_int* atom) {
+char* tofe_atom_print_expand_int(char* ptr, const struct tofe_atomfmt_expand_int* atom) {
 	__u32 value = 0;
-	tofe_atomstyle_expand_int_get(atom, value);
+	tofe_atomfmt_expand_int_get(atom, value);
 	ptr += sprintf(ptr, "%d",  value);
 	return ptr;
 }
 
-char* tofe_atom_print_license(char* ptr, const struct tofe_atomstyle_license* atom) {
-	ptr = stpcpy(ptr, tofe_atomstyle_license_name(atom));
+char* tofe_atom_print_license(char* ptr, const struct tofe_atomfmt_license* atom) {
+	ptr = stpcpy(ptr, tofe_atomfmt_license_name(atom));
 	ptr++ = ' ';
 	ptr = '\0';
-	ptr = stpcpy(ptr, tofe_atomstyle_license_version(atom));
+	ptr = stpcpy(ptr, tofe_atomfmt_license_version(atom));
 	return ptr;
 }
 
-char* tofe_atom_print_size_offset(char* ptr, const struct tofe_atomstyle_size_offset* atom) {
+char* tofe_atom_print_size_offset(char* ptr, const struct tofe_atomfmt_size_offset* atom) {
 	__u16 size = 0;
 	__u16 offset = 0;
 	
-	tofe_atomstyle_size_offset_get_size(atom, size);
-	tofe_atomstyle_size_offset_get_offset(atom, offset);
+	tofe_atomfmt_size_offset_get_size(atom, size);
+	tofe_atomfmt_size_offset_get_offset(atom, offset);
 
 	ptr += sprintf("(%x->%x (%ib)", size, size+offset, offset);
 	return ptr;
@@ -245,10 +245,10 @@ char* tofe_atom_print_size_offset(char* ptr, const struct tofe_atomstyle_size_of
 
 #define TOFE_ATOM_PRINT_CASE(name) \
 	case ATOM_STYLE ## name : \
-		return tofe_atom_print ## name (ptr, (const struct tofe_atomstyle ## name *)(atom))
+		return tofe_atom_print ## name (ptr, (const struct tofe_atomfmt ## name *)(atom))
 
 char* tofe_atom_print(char* ptr, const struct tofe_atom* atom) {
-	switch(tofe_atom_style(atom)) {
+	switch(tofe_atomfmt(atom)) {
 	case ATOM_STYLE_invalid:
 		return stpcpy(ptr, "??? (Invalid)");
 	TOFE_ATOM_PRINT_CASE(string)
@@ -267,17 +267,7 @@ char* tofe_atom_print(char* ptr, const struct tofe_atom* atom) {
 		;
 #ifdef NDEBUG
 	default:
-		return stpcpy(ptr, "??? (Unknown style)");
+		return stpcpy(ptr, "??? (Unknown format)");
 	}
 #endif
 }
-
-__u8 tofe_atom_sprintf(char* ptr, const struct tofe_atom* atom) {
-	ptr = stpcpy(ptr, tofe_atom_type_str(atom));
-	ptr++ = ':';
-	ptr++ = ' ';
-	ptr = '\0';
-
-	switch(
-}
-
