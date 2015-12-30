@@ -685,22 +685,22 @@ class AtomFormatSizeOffset(Atom):
     class Small(ctypes.LittleEndianStructure):
         _pack_ = 1
         _fields_ = [
-            ("offset", ctypes.c_uint8),
-            ("size", ctypes.c_uint8),
+            ("offset",  ctypes.c_uint8),
+            ("size",    ctypes.c_uint8),
         ]
 
     class Medium(ctypes.LittleEndianStructure):
         _pack_ = 1
         _fields_ = [
-            ("offset", ctypes.c_uint16),
-            ("size", ctypes.c_uint16),
+            ("offset",  ctypes.c_uint16),
+            ("size",    ctypes.c_uint16),
         ]
 
     class Large(ctypes.LittleEndianStructure):
         _pack_ = 1
         _fields_ = [
-            ("offset", ctypes.c_uint32),
-            ("size", ctypes.c_uint32),
+            ("offset",  ctypes.c_uint32),
+            ("size",    ctypes.c_uint32),
         ]
 
     _fields_ = [
@@ -842,9 +842,10 @@ ATOMS_TYPES[%(atom_type)s] = Atom%(name)s
     })
 
 
-class AtomCommon(DynamicLengthStructure):
+class AtomsCommon(DynamicLengthStructure):
     _pack_ = 1
 
+    VERSION = 0xff
     MAGIC = b'\x00\x01\x02\x03\x04'
     RAGIC = b'\0x4\0x3\0x2\x01\x00'
 
@@ -854,11 +855,17 @@ class AtomCommon(DynamicLengthStructure):
 
     def populate(self):
         self.magic = self.MAGIC
-        self.version = 0x1
+        self.version = self.VERSION
         self.atoms = 0
         self.len = len(self.RAGIC)
         self.data[:] = self.RAGIC[:]
         self.crc_update()
+
+    def check(self):
+        assert_eq(self.magic, self.MAGIC)
+        assert_eq(self.version, self.VERSION)
+        assert_eq(self.ragic, self.RAGIC)
+        self.crc_check()
 
     def add_atom(self, atom):
         assert bytes(self.ragic) == self.RAGIC
@@ -911,18 +918,20 @@ class AtomCommon(DynamicLengthStructure):
         return bytearray(self.data[self.len - len(self.RAGIC):])
 
 
-class TOFEAtoms(AtomCommon):
+class TOFEAtoms(AtomsCommon):
     """Structure representing the TOFE EEPROM format."""
-    _fields_ = [
-        ("magic", ctypes.c_char * 5),
-        ("version", ctypes.c_uint8),
-        ("atoms", ctypes.c_uint8),
-        ("crc8", ctypes.c_ubyte),
-        ("_len", ctypes.c_uint32),
-        ("_data", ctypes.c_ubyte * 0),
-    ]
+    VERSION = 0x01
     MAGIC = b'TOFE\0'
     RAGIC = MAGIC[::-1]
+
+    _fields_ = [
+        ("magic",   ctypes.c_char * 5),
+        ("version", ctypes.c_uint8),
+        ("atoms",   ctypes.c_uint8),
+        ("crc8",    ctypes.c_ubyte),
+        ("_len",    ctypes.c_uint32),
+        ("_data",   ctypes.c_ubyte * 0),
+    ]
 
 
 if __name__ == "__main__":

@@ -13,29 +13,35 @@ from utils import *
 from tofe_eeprom import *
 from fx2_eeprom import *
 
-ATOMS_SPACE = (128 - len(microboot_cfg.buffer) - 1)
+EEPROM_SIZE = 256
+CHECKSUM_SIZE = 1
+EEPROM_USEFUL = int(256/2) - 1
 
-class OpsisAtoms(AtomCommon):
-    MAGIC = b''
+ATOMS_SPACE = EEPROM_USEFUL - microboot_cfg.totalsize - ctypes.sizeof(FX2DataSegment)
+
+class OpsisAtoms(AtomsCommon):
+    VERSION = 0x01
+    MAGIC = b'OP'
     RAGIC = b''
     magic = b''
 
     _fields_ = [
+        ("magic",   ctypes.c_char * 2), # 2 bytes    2
         ("version", ctypes.c_uint8),    # 1 byte     1
         ("atoms",   ctypes.c_uint8),    # 1 byte     2
-        ("crc8", ctypes.c_ubyte),       # 1 byte     3
-        ("_len", ctypes.c_uint8),       # 1 byte     4
-        ("_data", ctypes.c_ubyte * (ATOMS_SPACE - 4)),
+        ("crc8",    ctypes.c_ubyte),    # 1 byte     3
+        ("_len",    ctypes.c_uint8),    # 1 byte     4
+        ("_data",   ctypes.c_ubyte * (ATOMS_SPACE - 6)),
     ]
 
     def populate(self):
-        AtomCommon.populate(self)
+        AtomsCommon.populate(self)
         # Board ID
         #self.add_atom(AtomManufacturerID.create("numato.com"))
         self.add_atom(AtomProductID.create("opsis.h2u.tv"))
         # PCB Information
-        self.add_atom(AtomPCBRepository.create(0, "r/pcb.git"))
-        self.add_atom(AtomPCBRevision.create("6a18b19"))
+        #self.add_atom(AtomPCBRepository.create(0, "pcb.git"))
+        self.add_atom(AtomPCBRevision.create("6a18"))
         self.add_atom(AtomPCBLicense.create(AtomPCBLicense.Names.CC_BY_SA_v40))
         #self.add_atom(AtomPCBProductionBatchID.create(time.time()))
         #self.add_atom(AtomPCBPopulationBatchID.create(time.time()))
@@ -52,13 +58,13 @@ class OpsisAtoms(AtomCommon):
         return ctypes.sizeof(self._data) - self._len
 
 
+
+
 class OpsisEEPROM(ctypes.LittleEndianStructure):
     _pack_ = 1
     _fields_ = [
-        # FX2 Header
-        ("_microboot_cfg", ctypes.c_byte * len(microboot_cfg.buffer)),
-        # Info Atoms Data
-        ("_atoms", ctypes.c_ubyte * ATOMS_SPACE),
+        # FX2 Data
+        ("fx2_data", ctypes.c_ubyte * EEPROM_USEFUL),
         # Extra Checksum
         ("crc8_full", ctypes.c_uint8),
         # Microchip section
@@ -67,28 +73,46 @@ class OpsisEEPROM(ctypes.LittleEndianStructure):
     ]
 
     @property
-    def microboot(self):
-        return FX2Config.from_address(ctypes.addressof(self._microboot_cfg))
+    def fx2cfg(self):
+        return FX2Config.from_address(ctypes.addressof(self.fx2_data))
 
     @property
     def atoms(self):
-        return OpsisAtoms.from_address(ctypes.addressof(self)+self.__class__._atoms.offset)
+        fx2_atoms_seg = self.fx2cfg.segments()[-2]
+        return OpsisAtoms.from_address(ctypes.addressof(fx2_atoms_seg)+FX2DataSegment._data.offset)
 
     def populate(self):
-        self._microboot_cfg[:] = microboot_cfg.buffer[:]
+        # Clear the area
+        self.fx2_data = return_fill_buffer(self.fx2_data, 0x00)
+
+        # Import the 2nd stage bootloader
+        microboot_size = microboot_cfg.totalsize
+        self.fx2_data[:microboot_size] = microboot_cfg.buffer[:]
+
+        # Create the atom segment
+        atoms_seg = self.fx2cfg.segments()[-1]
+
+        atoms_seg.clear()
+        atoms_seg.addr = 0xE000     # Loaded into the scratch RAM
+        atoms_seg._len = ATOMS_SPACE
+
+        # Put the last segment back
+        last_seg = atoms_seg.next()
+        last_seg.make_last()
+
+        assert_eq(self.fx2cfg.totalsize, EEPROM_USEFUL)
 
         self.wp_empty = return_fill_buffer(self.wp_empty, 0xff)
         if self.wp_mac[0] == 0:
              self.wp_mac[0] = -1
              self.wp_mac[1] = -1
 
-        self._atoms = return_fill_buffer(self._atoms, 0)
         self.atoms.populate()
         self.crc8_full = self.calculate_crc_full()
 
     def check(self):
-        self.microboot.check()
-        self.atoms.crc_check()
+        self.fx2cfg.check()
+        self.atoms.check()
 
         assert_eq(self.wp_empty, return_fill_buffer(self.wp_empty, 0xff))
         assert_eq(self.crc8_full, self.calculate_crc_full())
@@ -135,8 +159,8 @@ class OpsisEEPROM(ctypes.LittleEndianStructure):
 
     def __repr__(self):
         s = self.__class__.__name__ + "\n"
-        s += "  " + repr(self.microboot) + "\n"
-        for seg in self.microboot.segments():
+        s += "  " + repr(self.fx2cfg) + "\n"
+        for seg in self.fx2cfg.segments():
             s += "  " + repr(seg) + "\n"
 
         s += print_struct(self, indent='  ') + "\n"
