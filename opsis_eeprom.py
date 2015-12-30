@@ -40,7 +40,7 @@ class OpsisAtoms(AtomsCommon):
         #self.add_atom(AtomManufacturerID.create("numato.com"))
         self.add_atom(AtomProductID.create("opsis.h2u.tv"))
         # PCB Information
-        #self.add_atom(AtomPCBRepository.create(0, "pcb.git"))
+        self.add_atom(AtomPCBRepository.create(0, "pcb.git"))
         self.add_atom(AtomPCBRevision.create("6a18"))
         self.add_atom(AtomPCBLicense.create(AtomPCBLicense.Names.CC_BY_SA_v40))
         #self.add_atom(AtomPCBProductionBatchID.create(time.time()))
