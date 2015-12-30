@@ -190,7 +190,10 @@ class DynamicLengthStructure(ctypes.LittleEndianStructure):
     def len(self, value):
         rsize = self._extra_end + value
         if ctypes.sizeof(self) < rsize:
-            ctypes.resize(self, rsize)
+            try:
+                ctypes.resize(self, rsize)
+            except ValueError:
+                raise ValueError("Need %s more space" % (rsize - ctypes.sizeof(self)))
 
         self._len = self._extra_size + value
 
@@ -841,14 +844,6 @@ ATOMS_TYPES[%(atom_type)s] = Atom%(name)s
 
 class AtomCommon(DynamicLengthStructure):
     _pack_ = 1
-    _fields_ = [
-        ("magic", ctypes.c_char * 5),
-        ("version", ctypes.c_uint8),
-        ("atoms", ctypes.c_uint8),
-        ("crc8", ctypes.c_ubyte),
-        ("_len", ctypes.c_uint32),
-        ("_data", ctypes.c_ubyte * 0),
-    ]
 
     MAGIC = b'\x00\x01\x02\x03\x04'
     RAGIC = b'\0x4\0x3\0x2\x01\x00'
@@ -918,6 +913,14 @@ class AtomCommon(DynamicLengthStructure):
 
 class TOFEAtoms(AtomCommon):
     """Structure representing the TOFE EEPROM format."""
+    _fields_ = [
+        ("magic", ctypes.c_char * 5),
+        ("version", ctypes.c_uint8),
+        ("atoms", ctypes.c_uint8),
+        ("crc8", ctypes.c_ubyte),
+        ("_len", ctypes.c_uint32),
+        ("_data", ctypes.c_ubyte * 0),
+    ]
     MAGIC = b'TOFE\0'
     RAGIC = MAGIC[::-1]
 
