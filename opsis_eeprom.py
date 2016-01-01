@@ -146,7 +146,7 @@ class OpsisEEPROM(ctypes.LittleEndianStructure):
         return barcode.get('Code128', self.mac())
 
     def eui64(self):
-        if self.wp_mac[0] == 0:
+        if self.wp_mac[0] != -1:
             mac = list(self.wp_mac)
         else:
             assert self.wp_mac[0] == -1
