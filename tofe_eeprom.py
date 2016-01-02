@@ -784,6 +784,56 @@ class AtomFormatSizeOffset(Atom):
         """
         return u"%s(%i, %i)" % (self.__class__.__name__, self.offset, self.size)
 
+
+class AtomCommentOn(AtomFormatString):
+    TYPE = 0xd1
+
+    _fields_ = [
+        ("index", ctypes.c_uint8),
+        ("_data", ctypes.c_char * 0),
+    ]
+
+    @classmethod
+    def create(cls, index, str):
+        u"""
+        >>> a1 = AtomCommentOn.create(2, "numato")
+        >>> a1.len
+        6
+        >>> a1.str
+        'numato'
+        >>> a1.as_bytearray()
+        bytearray(b'\\xff\\x07\\x02numato')
+        >>> a1.data[:]
+        [110, 117, 109, 97, 116, 111]
+        >>> a2 = AtomCommentOn.create(4, u"\u2603")
+        >>> a2.len
+        3
+        >>> a2.str
+        '☃'
+        >>> a2.data[:]
+        [226, 152, 131]
+        >>> a2.as_bytearray()
+        bytearray(b'\\xff\\x04\\x04\\xe2\\x98\\x83')
+        """
+        o = cls(type=cls.TYPE)
+        assert o.type == cls.TYPE
+        assert o._len == 1
+        o.index = index
+        o.str = str
+        return o
+
+    def __repr__(self):
+        r"""
+        >>> a1 = AtomCommentOnL.create(1, "numato")
+        >>> repr(a1)
+        "AtomCommentOn(1, 'numato')"
+        >>> a2 = AtomCommentOn.create(2, u"\u2603")
+        >>> repr(a2)
+        "AtomCommentOn(2, '☃')"
+        """
+        return u"%s(%i, '%s')" % (self.__class__.__name__, self.index, self.str)
+
+
 # Actual atoms
 ATOMS = [
     # Product Identification atoms
@@ -795,19 +845,19 @@ ATOMS = [
     ("Product Part Number",       AtomFormatString),
     # Auxiliary atoms
     ("Auxiliary URL",             AtomFormatURL),
-    # 0x2_ - PCB information atoms
+    # PCB information atoms
     ("PCB Repository",            AtomFormatRelativeURL),
     ("PCB Revision",              AtomFormatString),
     ("PCB License",               AtomFormatLicense),
     ("PCB Production Batch ID",   AtomFormatTimestamp),
     ("PCB Population Batch ID",   AtomFormatTimestamp),
-    # 0x3_ - Firmware atoms
+    # Firmware atoms
     ("Firmware Description",      AtomFormatString),
     ("Firmware Repository",       AtomFormatRelativeURL),
     ("Firmware Revision",         AtomFormatString),
     ("Firmware License",          AtomFormatLicense),
     ("Firmware Program Date",     AtomFormatTimestamp),
-    # 0x4_ - EEPROM atoms
+    # EEPROM atoms
     ("EEPROM Total Size",         AtomFormatSizeOffset),
     ("EEPROM Vendor Data",        AtomFormatSizeOffset),
     ("EEPROM TOFE Data",          AtomFormatSizeOffset),
@@ -815,7 +865,8 @@ ATOMS = [
     ("EEPROM GUID",               AtomFormatSizeOffset),
     ("EEPROM Hole",               AtomFormatSizeOffset),
     ("EEPROM Part Number",        AtomFormatString),
-    # 0x5_ - Other information links
+    ("EEPROM GUID Write",         AtomFormatSizeOffset),
+    # Other information links
     ("Sample Code Repository",    AtomFormatRelativeURL),
     ("Documentation Site",        AtomFormatRelativeURL),
     ("Comment",                   AtomFormatString),
@@ -840,6 +891,9 @@ ATOMS_TYPES[%(atom_type)s] = Atom%(name)s
         "atom_i": hex(atom_i),
         "atom_type": hex(atom_type),
     })
+
+AtomCommentOn.ORDER = (i+1)
+ATOMS_TYPES[0xd1] = AtomCommentOn
 
 
 class AtomsCommon(DynamicLengthStructure):
@@ -873,7 +927,7 @@ class AtomsCommon(DynamicLengthStructure):
         if self.atoms > 0:
             assert atom.ORDER >= self.get_atom(self.atoms-1).ORDER
 
-        if isinstance(atom, AtomFormatRelativeURL):
+        if isinstance(atom, (AtomFormatRelativeURL, AtomCommentOn)):
             assert atom.index < self.atoms, "%i < %i" % (atom.index, self.atoms)
 
         atom_size = ctypes.sizeof(atom)
@@ -992,8 +1046,34 @@ if __name__ == "__main__":
     # LowSpeedIO EEPROM
     # ------------------------------------------------
     lowspeedio_eeprom = TOFEAtoms()
-    lowspeedio_eeprom.add_atom(AtomManufacturerID.create("numato.com"))
-    lowspeedio_eeprom.add_atom(AtomProductID.create("tofe.io/lowspeedio"))
+    lowspeedio_eeprom.add_atom(AtomManufacturerID.create("numato.com"))         # 1
+    lowspeedio_eeprom.add_atom(AtomProductID.create("tofe.io/lowspeedio"))      # 2
+    lowspeedio_eeprom.add_atom(AtomProductVersion.create("v1.0.0"))             # 3
+    lowspeedio_eeprom.add_atom(AtomPCBRepository.create(1, "r/pcb.git"))        # 4
+    lowspeedio_eeprom.add_atom(AtomPCBRevision.create("a902c70"))               # 5
+    lowspeedio_eeprom.add_atom(AtomPCBLicense.create(AtomPCBLicense.Names.CC_BY_SA_v40)) # 5
+    #lowspeedio_eeprom.add_atom(AtomPCBProductionBatchID.create(1450787283)) # time.time())) # 6
+    lowspeedio_eeprom.add_atom(AtomEEPROMTotalSize.create(0, 16*1024))          # 7
+    lowspeedio_eeprom.add_atom(AtomEEPROMVendorData.create(0x600, 256))         # 8
+    lowspeedio_eeprom.add_atom(AtomEEPROMVendorData.create(0x800, 2))           # 9
+    lowspeedio_eeprom.add_atom(AtomEEPROMTOFEData.create(0, 1024))              # 10
+    lowspeedio_eeprom.add_atom(AtomEEPROMUserData.create(0x400, 256))           # 11
+    lowspeedio_eeprom.add_atom(AtomEEPROMPartNumber.create("PIC18F14K50"))      # 12
+    lowspeedio_eeprom.add_atom(AtomEEPROMGUIDWrite.create(0x700, 16))           # 13
+    lowspeedio_eeprom.add_atom(AtomComment.create("Thanks for backing!"))
+    lowspeedio_eeprom.add_atom(AtomCommentOn.create(8, """\
+ADC Values - 0x6XY
+X == Channel (0->5)
+Y == 0 - Enable/Disable
+Y == 1 - Update counter
+Y == 2 - ADC Value (Low Byte)
+Y == 3 - ADC Value (High Byte)
+"""))
+    lowspeedio_eeprom.add_atom(AtomCommentOn.create(13, """\
+LED Control
+0x800 - D5
+0x801 - D6
+"""))
 
     b = lowspeedio_eeprom.as_bytearray()
     print("-"*10)
