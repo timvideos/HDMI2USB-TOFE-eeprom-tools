@@ -143,7 +143,8 @@ class OpsisEEPROM(ctypes.LittleEndianStructure):
 
     def mac_barcode(self):
         import barcode
-        return barcode.get('Code128', self.mac())
+        from barcode.writer import ImageWriter
+        return barcode.get('Code128', self.mac(), writer=ImageWriter())
 
     def eui64(self):
         if self.wp_mac[0] != -1:
@@ -205,4 +206,6 @@ if __name__ == "__main__":
     e.wp_mac[5] = 0x56
     e.wp_mac[6] = 0x78
     e.wp_mac[7] = 0x9a
-    e.mac_barcode().save('barcode_mac', {'module_height': 7, 'font_size': 12, 'text_distance': 5, 'human': 'MAC - %s' % e.mac()})
+
+    e.mac_barcode().save('barcode_mac_small', {'module_height': 8.65, 'module_width': 0.17750000000000000, 'font_size': 15, 'text_distance': 2, 'human': 'MAC - %s' % e.mac()})
+    e.mac_barcode().save('barcode_mac_large', {'module_height': 12.80, 'module_width': 0.20600000000000000, 'font_size': 20, 'text_distance': 2, 'human': 'MAC - %s' % e.mac()})
