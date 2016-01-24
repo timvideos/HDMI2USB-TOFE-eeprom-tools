@@ -1,2 +1,7 @@
-# HDMI2USB-find-board
-Python script for figuring out the state and information about HDMI2USB boards
+# TOFE EEPROM Tools
+
+This repository contains code for generating and parsing the contents of
+EEPROMs found on TOFE boards.
+
+Details about the EEPROM format can be found at https://hdmi2usb.tv/tofe/EEPROM.html
+
