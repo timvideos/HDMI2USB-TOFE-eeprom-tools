@@ -2,7 +2,7 @@
 #define __OPSIS_EEPROM_H
 
 #ifdef __SDCC
-#include "sdcc_stdin.h"
+#include "sdcc_stdint.h"
 #else
 #include <stdint.h>
 #endif  // __SDCC
