@@ -892,7 +892,7 @@ class AtomCommon(DynamicLengthStructure):
             current_offset += ctypes.sizeof(Atom)
             current_offset += a._len
         assert a is not None, a
-        assert a.type in ATOMS_TYPES
+        assert a.type in ATOMS_TYPES, a.type
         a = ATOMS_TYPES[a.type].from_address(ctypes.addressof(a))
 
         if isinstance(a, AtomFormatRelativeURL):
